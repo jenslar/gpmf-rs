@@ -1,0 +1,25 @@
+//! Processing and conversion of various kinds of sensor data.
+//! Currently only GPS is supported. The rest will be added gradually.
+
+use time::{PrimitiveDateTime, format_description};
+
+use crate::GpmfError;
+
+pub mod data_types;
+pub mod gps;
+pub mod sensor;
+
+pub use data_types::DataType;
+// pub use sensor::{Acceleration, Accelerometer};
+// pub use sensor::{Orientation, Rotation, Gyroscope};
+pub use sensor::{SensorData, SensorType};
+pub use gps::{GoProPoint, Gps};
+
+/// String representation for datetime objects.
+pub(crate) fn primitivedatetime_to_string(datetime: &PrimitiveDateTime) -> Result<String, GpmfError> {
+    // PrimitiveDateTime::to_string(&self.datetime) // sufficient?
+    let format = format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]")
+        .map_err(|e| GpmfError::TimeError(e.into()))?;
+    datetime.format(&format)
+        .map_err(|e| GpmfError::TimeError(e.into()))
+}
