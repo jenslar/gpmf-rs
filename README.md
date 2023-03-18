@@ -2,7 +2,15 @@
 
 Rust crate for parsing GoPro GPMF data, directly from MP4, from "raw" GPMF-files extracted via ffmpeg, or byte slices.
 
-Example:
+Usage (not yet on crates.io):
+
+`Cargo.toml`:
+```toml
+[dependencies]
+gpmf-rs = {git = "https://github.com/jenslar/gpmf-rs.git"}
+```
+
+`src/main.rs`:
 ```rs
 use gpmf_rs::Gpmf;
 use std::path::Path;
