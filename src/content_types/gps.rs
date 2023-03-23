@@ -378,8 +378,8 @@ impl GoProPoint {
             .enumerate()
             .map(|(i, vec)| {
                 let ts = devc_stream.time.as_ref().map(|t| Timestamp {
-                    relative: (i as f64 * t.relative as f64 / len as f64).round() as u32,
-                    duration: (t.relative as f64 / len as f64).round() as u32
+                    relative: (t.relative as f64 + i as f64 * t.duration as f64 / len as f64).round() as u32,
+                    duration: (i as f64 * t.duration as f64 / len as f64).round() as u32
                 });
                 GoProPoint::from_raw(&vec, &scale, ts, None, None, None)
             })
