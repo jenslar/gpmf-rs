@@ -234,7 +234,12 @@ impl GoProPoint {
                     _ => (), // break?
                 }
             });
-        
+
+        // GPS9 timestamp estimate
+        if let Some(ts) = devc_timestamp {
+            point.time = Some(ts);
+        }
+
         // Add optional values, only for GPS5 devices
         if let Some(dt) = datetime {
             point.datetime = dt
