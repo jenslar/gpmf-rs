@@ -150,7 +150,7 @@ impl Default for GoProPoint {
             altitude: f64::default(),
             speed2d: f64::default(),
             speed3d: f64::default(),
-            datetime: datetime!(2020-01-01 0:00), // GoPro start date
+            datetime: datetime!(2000-01-01 0:00), // GoPro start date
             dop: None,
             fix: None,
             time: None
