@@ -66,6 +66,10 @@ impl GoProSession {
         self.0.last_mut()
     }
 
+    pub fn device(&self) -> Option<&DeviceName> {
+        self.first().map(|gp| &gp.device)
+    }
+
     /// Parses and merges GPMF-data for all
     /// files in session to a single `Gpmf` struct.
     pub fn gpmf(&self) -> Result<Gpmf, GpmfError> {
@@ -129,7 +133,12 @@ impl GoProSession {
     pub fn sort_gps(&mut self, prune: bool) -> Result<Self, GpmfError> {
         let mut dt_gp: Vec<(PrimitiveDateTime, GoProFile)> = Vec::new();
         let mut remove_index: Vec<usize> = Vec::new();
+
         for (i, gp) in self.0.iter_mut().enumerate() {
+            let use_gps9 = match gp.device {
+                DeviceName::Hero11Black => true,
+                _ => false
+            };
             // Extract GPS log, and filter out points with bad satellite lock
             let mut gps = Gps::default();
             if prune {
@@ -137,7 +146,14 @@ impl GoProSession {
                 // TODO testing using only the first DEVC, since timestamp
                 // TODO while incorrect should still be in chronological order
                 if let Ok(gpmf) = gp.gpmf_first() {
-                    gps = gpmf.gps().filter(None);
+                    // gps = gpmf.gps().filter(None);
+                    if use_gps9 {
+                        // 2D lock, ignore DOP
+                        gps = gpmf.gps9().filter(2, None);
+                    } else {
+                        gps = gpmf.gps5().filter(2, None);
+                    }
+                    // gps = gpmf.gps()
                 } else {
                     // Add index of GoProFile for removal for file
                     // that raised error then continue to next file
@@ -147,7 +163,13 @@ impl GoProSession {
             } else {
                 // gps = gp.gpmf()?.gps().filter(None);
                 // TODO testing using only the first DEVC
-                gps = gp.gpmf_first()?.gps().filter(None);
+                if use_gps9 {
+                    // 2D lock, ignore DOP
+                    gps = gp.gpmf_first()?.gps9().filter(2, None);
+                } else {
+                    gps = gp.gpmf_first()?.gps5().filter(2, None);
+                }
+                // gps = gp.gpmf_first()?.gps();
             }
             // Return error if no points were logged
             // If one file in sequence does not contains GPS data,

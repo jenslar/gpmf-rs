@@ -66,8 +66,15 @@ pub enum FourCC {
     /// HERO6Black  Faces counted per frame 12, 12.5 or 15 (based video frame rate) n/a Not supported in HEVC modes
     /// HERO7Black  removed n/a n/a
     FCNM,
-    /// HERO5Black+  latitude, longitude, altitude (WGS 84), 2D ground speed, and 3D speed   18  deg, deg, m, m/s, m/s   
+    /// HERO5Black - Hero10Black (logged, but deprecated for Hero11)
+    /// 18Hz
+    /// latitude, longitude, altitude (WGS 84), 2D ground speed, and 3D speed
+    /// deg, deg, m, m/s, m/s   
     GPS5,
+    /// Hero11 Black and later
+    /// lat, long, alt (WGS 84), 2D speed, 3D speed, days, seconds, DOP, fix
+    /// deg, deg, m, m/s, m/s, days, seconds, NONE, NONE
+    GPS9,
     /// HERO5Black+  GPS Fix 1   n/a Within the GPS stream: 0 - no lock, 2 or 3 - 2D or 3D Lock
     GPSF,
     /// HERO5Black+  GPS Precision - Dilution of Precision (DOP x100)    1   n/a Within the GPS stream, under 500 is     good. For more information of GPSP, (or DOP) see https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)
@@ -236,6 +243,7 @@ impl FourCC {
             b"FACE" => Ok(FourCC::FACE),
             b"FCNM" => Ok(FourCC::FCNM),
             b"GPS5" => Ok(FourCC::GPS5),
+            b"GPS9" => Ok(FourCC::GPS9),
             b"GPSF" => Ok(FourCC::GPSF),
             b"GPSP" => Ok(FourCC::GPSP),
             b"GPSU" => Ok(FourCC::GPSU),
@@ -414,6 +422,7 @@ impl FourCC {
             FourCC::FACE => "FACE",
             FourCC::FCNM => "FCNM",
             FourCC::GPS5 => "GPS5",
+            FourCC::GPS9 => "GPS9",
             FourCC::GPSF => "GPSF",
             FourCC::GPSP => "GPSP",
             FourCC::GPSU => "GPSU",

@@ -422,7 +422,11 @@ impl Stream {
     }
 
     /// Find all streams with specified `DataType`.
-    pub fn filter_all(&self, content_type: &DataType, recursive: bool) -> Option<&Self> {
+    pub fn filter_all(
+        &self,
+        content_type: &DataType,
+        recursive: bool
+    ) -> Option<&Self> {
         match &self.streams {
             StreamType::Values(_) => return None,
             StreamType::Nested(streams) => {

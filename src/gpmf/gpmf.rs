@@ -439,16 +439,34 @@ impl Gpmf {
             .and_then(|s| s.device_id())
     }
 
-    /// Returns all GPS streams as Vec<Point>`. Each returned point is a processed,
-    /// linear average of `GPS5`. Should be accurate enough for the 10 or 18Hz GPS
-    /// used by GoPro, but implementing a latitude dependent average
+    /// For `GPS5` models, Hero10 and earlier.
+    /// 
+    /// Since `GPS5` only logs datetime, GPS fix, and DOP
+    /// per point-cluster, a single average point is returned
+    /// per `STRM`. This is a linear average, but
+    /// should be accurate enough for the up to 18Hz log.
+    /// Implementing a latitude dependent average
     /// is a future possibility.
-    pub fn gps(&self) -> Gps {
+    pub fn gps5(&self) -> Gps {
         Gps(self.filter_iter(&DataType::Gps5)
-            .flat_map(|s| GoProPoint::new(&s)) // TODO which Point to use?
+            // why is this flat_map and not filter_map?
+            .flat_map(|s| GoProPoint::from_gps5(&s)) // TODO which Point to use?
             .collect::<Vec<_>>())
     }
 
+    /// For `GPS9` models, Hero11 and later.
+    /// 
+    /// Since the newer `GPS9` format logs datetime,
+    /// GPS fix, and DOP per-point, all points are returned,
+    /// which means larger amounts of data.
+    pub fn gps9(&self) -> Gps {
+        Gps(self.filter_iter(&DataType::Gps9)
+            .filter_map(|s| GoProPoint::from_gps9(&s)) // TODO which Point to use?
+            .flatten()
+            .collect::<Vec<_>>())
+    }
+
+    /// Sensors data. Available sensors depend on model.
     pub fn sensor(&self, sensor_type: &SensorType) -> Vec<SensorData> {
         SensorData::from_gpmf(self, sensor_type)
     }

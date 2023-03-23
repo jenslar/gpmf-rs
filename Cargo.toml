@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 binread = "2.2"
 rayon = "1.5.3"
-time = {version = "0.3", features = ["formatting", "parsing"]}
+time = {version = "0.3", features = ["formatting", "parsing", "macros"]}
 walkdir = "2.3.2"
 geojson = {version = "0.24", features = ["geo-types"]}
 kml = "0.7.1"

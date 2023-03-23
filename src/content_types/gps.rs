@@ -1,10 +1,10 @@
-use time::PrimitiveDateTime;
+use time::{PrimitiveDateTime, Time, ext::NumericalDuration, macros::{datetime, date}};
 
 use crate::{
     FourCC,
     GpmfError,
     Stream,
-    Timestamp
+    Timestamp, content_types::gps
 };
 
 use super::primitivedatetime_to_string;
@@ -63,19 +63,30 @@ impl Gps {
 
     /// Filter points on GPS fix, i.e. the number of satellites
     /// the GPS is locked on to. If satellite lock is not acquired,
-    /// the device will log latest known location with a
+    /// the device will log zeros or latest known location with a
     /// GPS fix of `0`, meaning both time and location will be
     /// wrong.
     /// 
-    /// Defaults to 2 if `gps_fix` is `None`.
-    /// Uses the `GPSF` value.
-    pub fn filter(&self, gps_fix: Option<u32>) -> Self {
-        // GoPro has four levels: 0, 1, 2, 3
-        let threshold = gps_fix.unwrap_or(2);
+    /// `min_gps_fix` corresponds to satellite lock and should be
+    /// at least 2 to ensure returned points have logged a position
+    /// that is in the vicinity of the camera.
+    /// Valid values are 0 (no lock), 2 (2D lock), 3 (3D lock).
+    /// On Hero 10 and earlier (devices that use `GPS5`) this is logged
+    /// in `GPSF`. Hero11 and later deprecate `GPS5` the value in GPS9
+    /// should be used instead.
+    
+    /// 
+    /// `min_dop` corresponds to [dilution of position](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)).
+    /// For Hero10 and earliers (`GPS5` devices) this is logged in `GPSP`
+    /// which is DOPx100. A value value below 500 is good
+    /// according to <https://github.com/gopro/gpmf-parser>.
+    /// For Hero11 an later (`GPS9` devices) DOP is logged in `GPS9`
+    pub fn filter(&self, min_gps_fix: u32, min_dop: Option<f64>) -> Self {
+        // GoPro has four levels: 0, 2, 3 (No lock, 2D lock, 3D lock)
         let filtered = self.0.iter()
             .filter(|p| 
                 match p.fix {
-                    Some(f) => f >= threshold,
+                    Some(f) => f >= min_gps_fix,
                     None => false
                 })
             .cloned()
@@ -117,12 +128,34 @@ pub struct GoProPoint {
     // pub heading: f64,
     /// Datetime derived from `GPSU` message.
     pub datetime: PrimitiveDateTime,
-    /// GPSF
+    // pub fix: Option<f64>,
+    /// DOP, dilution of precision.
+    /// `GPSP` for `GPS5` device (Hero10 and earlier),
+    /// Value at index 7 in `GPS9` array (Hero11 and later)
+    /// A parsed value below 0.5 is good according
+    /// to GPMF docs.
+    pub dop: Option<f64>,
+    /// GPSF for GPS5 device (Hero10 and earlier),
+    /// Value nr 9 in GPS9 array (Hero11 and later)
     pub fix: Option<u32>,
-    /// GPSP
-    pub precision: Option<u16>,
     /// Timestamp
     pub time: Option<Timestamp>,
+}
+
+impl Default for GoProPoint {
+    fn default() -> Self {
+        Self { 
+            latitude: f64::default(),
+            longitude: f64::default(),
+            altitude: f64::default(),
+            speed2d: f64::default(),
+            speed3d: f64::default(),
+            datetime: datetime!(2020-01-01 0:00), // GoPro start date
+            dop: None,
+            fix: None,
+            time: None
+        }
+    }
 }
 
 impl std::fmt::Display for GoProPoint {
@@ -144,23 +177,88 @@ impl std::fmt::Display for GoProPoint {
             self.speed3d,
             // self.heading,
             self.datetime,
+            self.dop,
             self.fix,
-            self.precision,
             self.time,
         )
     }
 }
 
+// impl From<(&[f64], &[f64])> for Vec<GoProPoint> {
+//     /// Convert a GPS9 or GPS5 array and a scale array
+//     /// to `GoProPoint`.
+//     /// Expects order to be `(GPS, SCALE)`.
+//     fn from(value: (&[f64], &[f64])) -> Vec<Self> {
+        
+//         Vec::new()
+//     }
+// }
+
 /// Point derived from GPS STRM with STNM "GPS (Lat., Long., Alt., 2D speed, 3D speed)"
 impl GoProPoint {
-    /// Parse stream of type `STRM` with `STNM` "GPS (Lat., Long., Alt., 2D speed, 3D speed)",
-    /// containing coordinate cluster into a single `Point` struct.
-    /// Returns a linear average of values within a single GPS stream, lumped together
+    /// Generates a point from two slices, one containing raw GPS data
+    /// from either a `GPS5` or a `GPS9` cluster, the other scale
+    /// values.
+    /// 
+    /// For `GPS5` devices `dop` (dilution of precision) is stored in `GPSP`,
+    /// and `fix` in `GPSF` and have to be specified separately
+    fn from_raw(
+        gps_slice: &[f64],
+        scale_slice: &[f64],
+        datetime: Option<PrimitiveDateTime>,
+        dop: Option<u16>,
+        fix: Option<u32>,
+    ) -> Self {
+        assert_eq!(gps_slice.len(), scale_slice.len(),
+            "Must be equal: GPS5/9 has length {}, but scale slice has length {}",
+            gps_slice.len(),
+            scale_slice.len()
+        );
+
+        let mut point = Self::default();
+        gps_slice.iter().zip(scale_slice)
+            .enumerate()
+            .for_each(|(i, (gps, scl))| {
+                match i {
+                    0 => point.latitude = gps/scl,
+                    1 => point.longitude = gps/scl,
+                    2 => point.altitude = gps/scl,
+                    3 => point.speed2d = gps/scl,
+                    4 => point.speed3d = gps/scl,
+                    // Below values are only valid for GPS9 devices
+                    5 => point.datetime += (gps/scl).days(),
+                    6 => point.datetime += (gps/scl).seconds(),
+                    7 => point.dop = Some(gps/scl),
+                    8 => point.fix = Some((gps/scl).round() as u32),
+                    _ => (), // break?
+                }
+            });
+        
+        // Add optional values, only for GPS5 devices
+        if let Some(dt) = datetime {
+            point.datetime = dt
+        }
+        if let Some(val) = fix {
+            point.fix = Some(val)
+        }
+        if let Some(val) = dop {
+            // specified as DOPx100 for GPS5 devices
+            point.dop = Some(val as f64 / 100.)
+        }
+
+        point
+    }
+
+    /// For Hero10 and earlier models.
+    /// 
+    /// Parse stream of type `STRM` with name (`STNM`) "GPS (Lat., Long., Alt., 2D speed, 3D speed)",
+    /// which contains a coordinate cluster.
+    /// Returns a single point from a linear average of values within a single GPS stream, lumped together
     /// once/second (only a single timestamp is logged for each cluster).
     /// GoPro GPS logs at 10 or 18Hz (depending on model) so on average 10 or 18 points are logged each second.
     /// For those who record while moving at very high velocities, a latitude dependent average could
     /// be implemented in a future release.
-    pub fn new(devc_stream: &Stream) -> Option<Self> {
+    pub fn from_gps5(devc_stream: &Stream) -> Option<Self> {
         // REQUIRED, each Vec<f64>, logged coordinates as cluster: [lat, lon, alt, 2d speed, 3d speed]
         // On average 18 coordinates per GPS5 message.
         let gps5 = devc_stream
@@ -173,7 +271,7 @@ impl GoProPoint {
         let mut sp2d_sum: f64 = 0.0;
         let mut sp3d_sum: f64 = 0.0;
 
-        // let mut gps5_count: usize = 0;
+        // // let mut gps5_count: usize = 0;
 
         let len = gps5.len();
 
@@ -245,9 +343,34 @@ impl GoProPoint {
             speed3d: sp3d_sum / len as f64 / sp3d_scl,
             datetime: gpsu,
             time: devc_stream.time.to_owned(),
+            dop: gpsp.map(|p| p as f64 / 100.),
             fix: gpsf,
-            precision: gpsp,
         })
+    }
+
+    /// For Hero11 and later models.
+    /// 
+    /// Parse stream of type `STRM` with `STNM` "GPS (Lat., Long., Alt., 2D, 3D, days, secs, DOP, fix)"
+    /// 
+    /// Since 
+    pub fn from_gps9(devc_stream: &Stream) -> Option<Vec<Self>> {
+        let mut points: Vec<Self> = Vec::new();
+        // REQUIRED, each Vec<f64>, logged coordinates as cluster: [lat, lon, alt, 2d speed, 3d speed]
+        // On average 18 coordinates per GPS5 message.
+        let gps9 = devc_stream
+            .find(&FourCC::GPS9)
+            .and_then(|s| s.to_vec_f64())?;
+
+        // REQUIRED
+        let scale = devc_stream
+            .find(&FourCC::SCAL)
+            .and_then(|s| s.to_f64())?;
+
+        let points = gps9.iter()
+            .map(|vec| GoProPoint::from_raw(&vec, &scale, None, None, None))
+            .collect::<Vec<_>>();
+
+        Some(points)
     }
 
     pub fn datetime_to_string(&self) -> Result<String, GpmfError> {
