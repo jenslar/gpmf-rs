@@ -341,6 +341,10 @@ impl Into<Option<Vec<f64>>> for &Value {
                         .map(|v| *v as f64 / (2_u32).pow(31) as f64)
                         .collect::<Vec<f64>>())
             }
+            Value::Complex(n) => Some(
+                n.iter()
+                    .filter_map(|v| v.as_ref().into())
+                    .collect::<Vec<f64>>()),
             _ => None,
         }
     }

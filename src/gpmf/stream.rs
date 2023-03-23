@@ -217,6 +217,12 @@ impl Stream {
             StreamType::Nested(_) => None,
             StreamType::Values(v) => v.iter()
                 .map(|b| b.into())
+                // TODO need to implement Into for Value::Complex
+                // .map(|b| if let Value::Complex(vec) = b {
+                //     vec.iter().map(|v| (*v).as_ref().to_f64()).to_owned().to_vec_f64().flatten()
+                // } else {
+                //     b.into()
+                // })
                 .collect(),
         }
     }

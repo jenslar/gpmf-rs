@@ -460,6 +460,7 @@ impl Gpmf {
     /// GPS fix, and DOP per-point, all points are returned,
     /// which means larger amounts of data.
     pub fn gps9(&self) -> Gps {
+        // 230323 Added Into<Vec<f64>> for Value::Complex, works so far (10x the points compared to GPS5)
         Gps(self.filter_iter(&DataType::Gps9)
             .filter_map(|s| GoProPoint::from_gps9(&s)) // TODO which Point to use?
             .flatten()

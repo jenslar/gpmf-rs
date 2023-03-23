@@ -354,9 +354,9 @@ impl GoProPoint {
     /// 
     /// Since 
     pub fn from_gps9(devc_stream: &Stream) -> Option<Vec<Self>> {
-        let mut points: Vec<Self> = Vec::new();
         // REQUIRED, each Vec<f64>, logged coordinates as cluster: [lat, lon, alt, 2d speed, 3d speed]
         // On average 18 coordinates per GPS5 message.
+        // 230323 added into() for Value::Complex -> Vec<f64>
         let gps9 = devc_stream
             .find(&FourCC::GPS9)
             .and_then(|s| s.to_vec_f64())?;
