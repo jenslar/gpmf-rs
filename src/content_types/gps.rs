@@ -205,6 +205,7 @@ impl GoProPoint {
     fn from_raw(
         gps_slice: &[f64],
         scale_slice: &[f64],
+        devc_timestamp: Option<Timestamp>,
         datetime: Option<PrimitiveDateTime>,
         dop: Option<u16>,
         fix: Option<u32>,
@@ -361,13 +362,22 @@ impl GoProPoint {
             .find(&FourCC::GPS9)
             .and_then(|s| s.to_vec_f64())?;
 
+        let len = gps9.len();
+
         // REQUIRED
         let scale = devc_stream
             .find(&FourCC::SCAL)
             .and_then(|s| s.to_f64())?;
 
         let points = gps9.iter()
-            .map(|vec| GoProPoint::from_raw(&vec, &scale, None, None, None))
+            .enumerate()
+            .map(|(i, vec)| {
+                let ts = devc_stream.time.as_ref().map(|t| Timestamp {
+                    relative: (i as f64 * t.relative as f64 / len as f64).round() as u32,
+                    duration: (t.relative as f64 / len as f64).round() as u32
+                });
+                GoProPoint::from_raw(&vec, &scale, ts, None, None, None)
+            })
             .collect::<Vec<_>>();
 
         Some(points)
