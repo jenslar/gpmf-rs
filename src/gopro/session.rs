@@ -135,25 +135,13 @@ impl GoProSession {
         let mut remove_index: Vec<usize> = Vec::new();
 
         for (i, gp) in self.0.iter_mut().enumerate() {
-            let use_gps9 = match gp.device {
-                DeviceName::Hero11Black => true,
-                _ => false
-            };
             // Extract GPS log, and filter out points with bad satellite lock
             let mut gps = Gps::default();
             if prune {
-                // if let Ok(gpmf) = gp.gpmf() {
                 // TODO testing using only the first DEVC, since timestamp
                 // TODO while incorrect should still be in chronological order
                 if let Ok(gpmf) = gp.gpmf_first() {
-                    // gps = gpmf.gps().filter(None);
-                    if use_gps9 {
-                        // 2D lock, ignore DOP
-                        gps = gpmf.gps9().filter(2, None);
-                    } else {
-                        gps = gpmf.gps5().filter(2, None);
-                    }
-                    // gps = gpmf.gps()
+                    gps = gpmf.gps().prune(2, None); // now checks model, uses gps9 for hero11 gps5 otherwise
                 } else {
                     // Add index of GoProFile for removal for file
                     // that raised error then continue to next file
@@ -161,15 +149,7 @@ impl GoProSession {
                     continue;
                 }
             } else {
-                // gps = gp.gpmf()?.gps().filter(None);
-                // TODO testing using only the first DEVC
-                if use_gps9 {
-                    // 2D lock, ignore DOP
-                    gps = gp.gpmf_first()?.gps9().filter(2, None);
-                } else {
-                    gps = gp.gpmf_first()?.gps5().filter(2, None);
-                }
-                // gps = gp.gpmf_first()?.gps();
+                gps = gp.gpmf_first()?.gps().prune(2, None); // now checks model, uses gps9 for hero11 gps5 otherwise
             }
             // Return error if no points were logged
             // If one file in sequence does not contains GPS data,

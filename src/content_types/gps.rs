@@ -61,9 +61,10 @@ impl Gps {
             .and_then(|p| primitivedatetime_to_string(&p.datetime).ok())
     }
 
-    /// Filter points on GPS fix, i.e. the number of satellites
-    /// the GPS is locked on to. If satellite lock is not acquired,
-    /// the device will log zeros or latest known location with a
+    /// Prune points if `gps_fix_min` is below specified value,
+    /// i.e. the number of satellites the GPS is locked on to.
+    /// If satellite lock is not acquired,
+    /// the device will log zeros or possibly latest known location with a
     /// GPS fix of `0`, meaning both time and location will be
     /// wrong.
     /// 
@@ -74,14 +75,13 @@ impl Gps {
     /// On Hero 10 and earlier (devices that use `GPS5`) this is logged
     /// in `GPSF`. Hero11 and later deprecate `GPS5` the value in GPS9
     /// should be used instead.
-    
     /// 
     /// `min_dop` corresponds to [dilution of position](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)).
     /// For Hero10 and earliers (`GPS5` devices) this is logged in `GPSP`
     /// which is DOPx100. A value value below 500 is good
     /// according to <https://github.com/gopro/gpmf-parser>.
     /// For Hero11 an later (`GPS9` devices) DOP is logged in `GPS9`
-    pub fn filter(&self, min_gps_fix: u32, min_dop: Option<f64>) -> Self {
+    pub fn prune(&self, min_gps_fix: u32, min_dop: Option<f64>) -> Self {
         // GoPro has four levels: 0, 2, 3 (No lock, 2D lock, 3D lock)
         let filtered = self.0.iter()
             .filter(|p| 
@@ -93,22 +93,22 @@ impl Gps {
             .collect::<Vec<_>>();
         Self(filtered)
     }
+}
 
-    // pub fn filter(&self, start_ms: u64, end_ms: u64) -> Option<Self> {
-    //     let mut points: Vec<Point> = Vec::new();
+pub enum GpsLock {
+    None,
+    Lock2D,
+    Lock3D
+}
 
-    //     for point in points.into_iter() {
-    //         let t = point.time.as_ref()?;
-    //         let start = t.to_relative().num_milliseconds();
-    //         let end = start + t.to_duration().num_milliseconds();
-
-    //         if start_ms >= start as u64 && end_ms <= end as u64 {
-    //             // points.push(point.to_owned());
-    //         }
-    //     }
-
-    //     Some(Gps(points))
-    // }
+impl GpsLock {
+    pub fn num(&self) -> u8 {
+        match &self {
+            GpsLock::None => 0,
+            GpsLock::Lock2D => 2,
+            GpsLock::Lock3D => 3,
+        }
+    }
 }
 
 /// Point derived from GPS data stream.
