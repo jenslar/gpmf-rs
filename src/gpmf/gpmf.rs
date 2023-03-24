@@ -441,7 +441,8 @@ impl Gpmf {
 
     pub fn gps(&self) -> Gps {
         // Hero 11 Black is the only GPS9 device so far
-        if self.device_name().first().and_then(|s| DeviceName::from_str(s)) == Some(DeviceName::Hero11Black) {
+        let device = self.device_name().first().and_then(|s| DeviceName::from_str(s));
+        if device == Some(DeviceName::Hero11Black) {
             self.gps9()
         } else {
             self.gps5()
