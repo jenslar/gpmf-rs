@@ -34,7 +34,7 @@ use rayon::prelude::{
 };
 
 use super::{FourCC, Timestamp, Stream};
-use crate::{StreamType, SensorType, SensorData};
+use crate::{StreamType, SensorType, SensorData, DeviceName};
 use crate::{
     Gps,
     GoProPoint,
@@ -437,6 +437,15 @@ impl Gpmf {
         self.streams
             .first()
             .and_then(|s| s.device_id())
+    }
+
+    pub fn gps(&self) -> Gps {
+        // Hero 11 Black is the only GPS9 device so far
+        if self.device_name().first().and_then(|s| DeviceName::from_str(s)) == Some(DeviceName::Hero11Black) {
+            self.gps9()
+        } else {
+            self.gps5()
+        }
     }
 
     /// For `GPS5` models, Hero10 and earlier.
