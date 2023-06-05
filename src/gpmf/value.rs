@@ -2,26 +2,26 @@
 
 use std::io::Cursor;
 
-use binread::{BinReaderExt, BinResult, BinRead};
-use time::{PrimitiveDateTime, format_description};
+use binread::{BinRead, BinReaderExt, BinResult};
+use time::{format_description, PrimitiveDateTime};
 
 use super::Header;
-use crate::{GpmfError, gopro::Dvid, FourCC};
+use crate::{gopro::Dvid, FourCC, GpmfError};
 
 /// The core data type/wrapper for GPMF data types.
 /// `Vec<T>` was chosen as inner value over `T` for (possibly misguided)
 /// performance and boiler plate reasons.
-/// 
+///
 /// A single GPMF stream may contain multiple `Value`s, i.e. `Vec<Value>`,
 /// which is basically a `Vec<Vec<T>>`.
-/// 
+///
 /// Type descriptions are edited versions of GoPro's own, see <https://github.com/gopro/gpmf-parser>.
-/// 
+///
 /// Notes:
 /// - Type `35`/`#` contains "Huffman compression STRM payloads. 4-CC <type><size><rpt> <data ...> is compressed as 4-CC '#'<new size/rpt> <type><size><rpt> <compressed data ...>" (see above GitHub repo).
 /// It is currently parsed into `Vec<u8>`, but no further decoding or processing is implemented.
 /// - Strings except `Value::Utf8()` variant map to ISO8859-1 as a single-byte (0-255) extension of ascii. I.e. `String::from_utf8(Vec<u8>)` would be incorrect or fail for values above 127. See <https://github.com/gopro/gpmf-parser/issues/143#issuecomment-952125684>. `u8 as char` is used as a workaround to produce valid UTF-8 string.
-/// 
+///
 /// For the original C source, see:
 /// <https://github.com/gopro/gpmf-parser/blob/420930426c00a2ef3158847f967aed2acb2b06c1/GPMF_common.h>
 #[derive(Debug, Clone, PartialEq)]
@@ -92,14 +92,17 @@ pub enum Value {
 impl Value {
     /// Reads repeated data type `T` in Big Endian (all GPMF data is BE),
     /// into `Vec<T>`.
-    /// 
+    ///
     /// With e.g. `Header::basetype = 76/L` (`u32`) we may have:
     /// - `Header::basesize = 12` (in bytes)
     /// - `std::mem::size_of::<u32>() = 4`
-    /// 
+    ///
     /// This yields `12 / std::mem::size_of::<u32>() = 3`,
     /// i.e. one array with 3 `u32` values: `[1_u32, 2_u32, 3_u32]`
-    fn read<T: Sized + BinRead>(cursor: &mut Cursor<Vec<u8>>, header: &Header) -> BinResult<Vec<T>> {
+    fn read<T: Sized + BinRead>(
+        cursor: &mut Cursor<Vec<u8>>,
+        header: &Header,
+    ) -> BinResult<Vec<T>> {
         // Determine number of values, via type mem size.
         // May miss values or ignore insufficient data error
         // if integer division results in remainder?
@@ -110,13 +113,14 @@ impl Value {
         // "BinReadError(Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })"
         // indicates corrupt data or implementation error?
         // IMPL ERROR header.repeats contain weird values...
-        // let range = 0 .. header.repeats as usize;
+        // using repeats yields very different result compared to using size_of above???
+        // header implementation incorrect?
+        // let range2 = 0..header.repeats as usize;
+        // let range = 0 .. header.repeats as usize - 1;
 
-        // println!("RANGE {range:?}");
+        // println!("RANGE {range:?} | RANGE2 {range2:?}");
 
-        range.into_iter()
-            .map(|_| cursor.read_be::<T>())
-            .collect()
+        range.into_iter().map(|_| cursor.read_be::<T>()).collect()
     }
 
     // fn type_name(&self) -> &str {
@@ -130,7 +134,8 @@ impl Value {
     /// Ignores `null` characters.
     fn from_iso8859_1(cursor: &mut Cursor<Vec<u8>>, header: &Header) -> Result<String, GpmfError> {
         let bytes = Self::read::<u8>(cursor, header)?;
-        Ok(bytes.iter()
+        Ok(bytes
+            .iter()
             .filter_map(|c| if c != &0 { Some(*c as char) } else { None })
             .collect())
     }
@@ -142,7 +147,7 @@ impl Value {
     }
 
     /// Generates new `Value` enum from cursor. Supports complex types.
-    /// 
+    ///
     /// > IMPORTANT: For GPMF/MP4 32-alignment is necessary. This has
     /// > to be done as the final step per GPMF stream (`Stream`)
     /// > outside of this method, since a single GPMF stream may translate
@@ -154,9 +159,8 @@ impl Value {
     pub(crate) fn new(
         cursor: &mut Cursor<Vec<u8>>,
         header: &Header,
-        complextype: Option<&str>
+        complextype: Option<&str>,
     ) -> Result<Self, GpmfError> {
-
         let values = match header.basetype {
             b'b' => Self::Sint8(Self::read::<i8>(cursor, header)?),
             b'B' => Self::Uint8(Self::read::<u8>(cursor, header)?),
@@ -191,12 +195,11 @@ impl Value {
                 // to bytesize of type, e.g. 4 for 32-bit value.
                 // Should only go one recursive level deep.
                 if let Some(types) = complextype {
-
                     // let complex: Result<Vec<Box<Value>>, GpmfError> = types.as_bytes().iter()
                     //     .map(|t| Self::new(cursor, &header.complex(t), None))
                     //     .map(|v| Box::new(v))
                     //     .collect();
-                    
+
                     let mut complex: Vec<Box<Self>> = Vec::new();
 
                     for t in types.as_bytes().iter() {
@@ -204,15 +207,15 @@ impl Value {
                         let hdr = header.convert(t);
 
                         let value = Self::new(cursor, &hdr, None)?;
-                        
+
                         complex.push(Box::new(value));
                     }
 
                     Self::Complex(complex)
                 } else {
-                   return Err(GpmfError::MissingComplexType)
+                    return Err(GpmfError::MissingComplexType);
                 }
-            },
+            }
             // 0, NULL, containers (DEVC, STRM)
             0 => Self::Nested,
             b => return Err(GpmfError::UnknownBaseType(b)),
@@ -260,10 +263,9 @@ impl AsRef<Self> for Value {
 impl Into<Option<String>> for &Value {
     fn into(self) -> Option<String> {
         match self {
-            Value::String(s)
-            | Value::Datetime(s)
-            | Value::FourCC(s)
-            | Value::Utf8(s) => Some(s.to_owned()),
+            Value::String(s) | Value::Datetime(s) | Value::FourCC(s) | Value::Utf8(s) => {
+                Some(s.to_owned())
+            }
             _ => None,
         }
     }
@@ -289,8 +291,9 @@ impl Into<Option<PrimitiveDateTime>> for &Value {
                 // before parse should be ok.
                 // e.g. "181007105554.644" -> "20181007105554.644"
                 let format = format_description::parse(
-                    "[year][month][day][hour][minute][second].[subsecond]"
-                ).ok()?;
+                    "[year][month][day][hour][minute][second].[subsecond]",
+                )
+                .ok()?;
                 PrimitiveDateTime::parse(&format!("20{dt}"), &format).ok()
             }
             _ => None,
@@ -302,7 +305,7 @@ impl Into<Option<u16>> for &Value {
     fn into(self) -> Option<u16> {
         match self {
             Value::Uint16(n) => n.first().cloned(),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -311,7 +314,7 @@ impl Into<Option<u32>> for &Value {
     fn into(self) -> Option<u32> {
         match self {
             Value::Uint32(n) => n.first().cloned(),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -331,20 +334,25 @@ impl Into<Option<Vec<f64>>> for &Value {
             Value::Float64(n) => Some(n.to_owned()),
             Value::Qint32(n) => {
                 // Q15.16 format -> div by 2^15
-                Some(n.iter()
+                Some(
+                    n.iter()
                         .map(|v| *v as f64 / (2_u16).pow(15) as f64)
-                        .collect::<Vec<f64>>())
+                        .collect::<Vec<f64>>(),
+                )
             }
             Value::Qint64(n) => {
                 // Q31.32 format -> div by 2^31
-                Some(n.iter()
+                Some(
+                    n.iter()
                         .map(|v| *v as f64 / (2_u32).pow(31) as f64)
-                        .collect::<Vec<f64>>())
+                        .collect::<Vec<f64>>(),
+                )
             }
             Value::Complex(n) => Some(
                 n.iter()
                     .filter_map(|v| v.as_ref().into())
-                    .collect::<Vec<f64>>()),
+                    .collect::<Vec<f64>>(),
+            ),
             _ => None,
         }
     }

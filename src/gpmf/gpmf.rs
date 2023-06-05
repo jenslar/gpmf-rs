@@ -32,6 +32,8 @@ use rayon::prelude::{
     IntoParallelRefIterator,
     ParallelIterator
 };
+use time::{PrimitiveDateTime, Duration};
+use time::macros::datetime;
 
 use super::{FourCC, Timestamp, Stream};
 use crate::{StreamType, SensorType, SensorData, DeviceName};
@@ -60,8 +62,9 @@ pub struct Gpmf {
 // }
 
 impl Gpmf {
-    /// GPMF from file. Either an unedited GoPro MP4-file,
-    /// JPEG-file (WIP, currently n/a),
+    /// Extract and parse GPMF data from file.
+    /// Either an unedited GoPro MP4-file,
+    /// JPEG-file,
     /// or a "raw" GPMF-file, extracted via FFmpeg.
     /// Relative timestamps for all data loads is exclusive
     /// to MP4, since these are derived from MP4 timing.
@@ -76,7 +79,6 @@ impl Gpmf {
     ///     Ok(())
     /// }
     /// ```
-    // pub fn new(path: &Path) -> Result<Self, GpmfError> {
     pub fn new(path: &Path, debug: bool) -> Result<Self, GpmfError> {
         let ext = path.extension()
             .and_then(|e| e.to_str())
@@ -111,15 +113,10 @@ impl Gpmf {
         Self::first_raw_mp4(&mut mp4)
     }
 
-    /// Extracts first DEVC stream only and without parsing,
-    /// then creates and return a Blake3 hash of the raw bytes.
+    /// Extracts first DEVC stream unparse as `Cursor<Vec<u8>>`.
     /// 
-    /// Presumed to be unqique enough to use as a fingerprint
-    /// without having to hash the entire GPMF stream or the
-    /// MP4 file itself.
-    /// 
-    /// Used for producing a hash that can be store in a `GoProFile`
-    /// struct to match, or high and low resolution clips or duplicate ones.
+    /// Used for producing a hash that can be stored in a `GoProFile`
+    /// struct to match high and low resolution clips, or duplicate ones.
     pub(crate) fn first_raw_mp4(mp4: &mut mp4iter::Mp4) -> Result<Cursor<Vec<u8>>, GpmfError> {
         mp4.reset()?;
         let offsets = mp4.offsets("GoPro MET")?;
@@ -148,19 +145,23 @@ impl Gpmf {
         let mut timestamps: Vec<Timestamp> = Vec::new();
         let mut cursors = offsets.iter()
             .map(|o| {
-                // Create timestamp
+                // 1. Create timestamp
                 let timestamp = timestamps.last()
                     .map(|t| Timestamp {
-                        relative: t.relative + o.duration,
-                        duration: o.duration,
+                        // relative: t.relative + o.duration,
+                        // duration: o.duration,
+                        // relative: t.relative + Duration::seconds(o.duration as i64),
+                        // duration: Duration::seconds(o.duration as i64),
+                        relative: t.relative + Duration::milliseconds(o.duration as i64),
+                        duration: Duration::milliseconds(o.duration as i64),
                     }).unwrap_or(Timestamp {
-                        relative: 0,
-                        duration: o.duration
+                        relative: Duration::milliseconds(0),
+                        duration: Duration::milliseconds(o.duration as i64)
                     });
                 timestamps.push(timestamp);
 
-                // Read and return data at MP4 offsets
-                mp4.read_at(o.position as u64, o.size as u64)
+                // 2. Read and return data at MP4 offsets
+                mp4.read_at(o.position, o.size as u64)
                     .map_err(|e| GpmfError::Mp4Error(e))
             })
             .collect::<Result<Vec<_>, GpmfError>>()?;
@@ -332,27 +333,30 @@ impl Gpmf {
             gpmf.offset_time(&ts);
         }
 
-        // Use append() instead?
-        // https://github.com/rust-lang/rust-clippy/issues/4321#issuecomment-929110184
-        self.extend(&gpmf.streams);
+        // append() is faster than extend() here so far
+        // see: https://github.com/rust-lang/rust-clippy/issues/4321#issuecomment-929110184
+        // self.extend(&gpmf.streams);
+        self.append(&mut gpmf.streams);
         self.source.extend(gpmf.source.to_owned());
     }
 
     /// Filters direct child nodes based on `StreamType`. Not recursive.
     pub fn filter(&self, data_type: &DataType) -> Vec<Stream> {
-        // self.iter()
         self.streams.par_iter()
             .flat_map(|s| s.filter(data_type))
             .collect()
     }
 
-    /// Filters direct child nodes based on `StreamType` and returns an iterator. Not recursive.
+    /// Filters direct child nodes based on `StreamType`
+    /// and returns a parallel iterator.
+    /// Not recursive.
     pub fn filter_iter<'a>(
         &'a self,
         data_type: &'a DataType,
     ) -> impl Iterator<Item = Stream> + 'a {
-        // self.iter()
-        self.streams.iter()
+    // ) -> impl ParallelIterator<Item = Stream> + 'a {
+        // self.streams.par_iter()
+        self.iter()
             .flat_map(move |s| s.filter(data_type))
     }
 
@@ -439,10 +443,32 @@ impl Gpmf {
             .and_then(|s| s.device_id())
     }
 
+    // pub fn t0(&self, gps: Option<Gps>) {
+    //     if let Some(g) = gps {
+
+    //     } else {
+    //         let gps = self.gps();
+    //     }
+    // }
+
+    /// Returns `2020-01-01 0:00` as `time::PrimitiveDateTime`,
+    /// the starting offset and earliest timestamp
+    /// for all GPMF datetimes.
+    pub fn basetime() -> PrimitiveDateTime {
+        datetime!(2020-01-01 0:00)
+    }
+
+    /// Returns GPS log. Extracts data from either `GPS5`
+    /// or `GPS9`, depending on device
+    /// (Hero11 is currently the only `GPS9`).
+    /// `GPS9` will return 10x the amount of points,
+    /// since each individual point is timestamped together with
+    /// satellite lock. `GPS5` instead logs this once for the entire cluster.
+    // pub fn gps(&self, set_delta: bool) -> Gps {
     pub fn gps(&self) -> Gps {
-        // Hero 11 Black is the only GPS9 device so far
         let device = self.device_name().first().and_then(|s| DeviceName::from_str(s));
         if device == Some(DeviceName::Hero11Black) {
+            // self.gps9(set_delta)
             self.gps9()
         } else {
             self.gps5()
@@ -459,8 +485,8 @@ impl Gpmf {
     /// is a future possibility.
     pub fn gps5(&self) -> Gps {
         Gps(self.filter_iter(&DataType::Gps5)
-            // why is this flat_map and not filter_map?
-            .flat_map(|s| GoProPoint::from_gps5(&s)) // TODO which Point to use?
+            // !!! why is this flat_map and not filter_map?
+            .flat_map(|s| GoProPoint::from_gps5(&s))
             .collect::<Vec<_>>())
     }
 
@@ -469,12 +495,18 @@ impl Gpmf {
     /// Since the newer `GPS9` format logs datetime,
     /// GPS fix, and DOP per-point, all points are returned,
     /// which means larger amounts of data.
+    // pub fn gps9(&self, set_delta: bool) -> Gps {
     pub fn gps9(&self) -> Gps {
         // 230323 Added Into<Vec<f64>> for Value::Complex, works so far (10x the points compared to GPS5)
-        Gps(self.filter_iter(&DataType::Gps9)
-            .filter_map(|s| GoProPoint::from_gps9(&s)) // TODO which Point to use?
+        let gps = Gps(self.filter_iter(&DataType::Gps9)
+            .filter_map(|s| GoProPoint::from_gps9(&s))
             .flatten()
-            .collect::<Vec<_>>())
+            .collect::<Vec<_>>());
+        // if set_delta {
+        //     let end = self.duration().expect("Failed to determine duration for GPMF.");
+        //     gps.set_delta_mut(&end);
+        // }
+        gps
     }
 
     /// Sensors data. Available sensors depend on model.

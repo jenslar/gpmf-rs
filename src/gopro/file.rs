@@ -7,15 +7,15 @@ use std::{path::{Path, PathBuf}, io::{Cursor, copy}};
 
 use binread::{BinReaderExt, BinResult};
 use blake3;
-use mp4iter::{self, FourCC};
-use time::Duration;
+use mp4iter::{self, FourCC, Offset, Mp4};
+use time::{Duration, PrimitiveDateTime, ext::NumericalDuration};
 
 use crate::{
     GpmfError,
     Gpmf, DeviceName, files::fileext_to_lcstring,
 };
 
-use super::GoProMeta;
+use super::{GoProMeta, GoProFileType};
 
 /// Represents an original, unedited GoPro MP4-file.
 // #[derive(Debug, Clone, PartialEq, Eq, PartialOrd)] // TODO PartialOrd needed for Ord
@@ -27,8 +27,10 @@ pub struct GoProFile {
     pub device: DeviceName,
     /// High resolution MP4 (`.MP4`)
     pub mp4: Option<PathBuf>,
+    // pub(crate) mp4_offsets: Vec<Offset>,
     /// Low resolution MP4 (`.LRV`)
     pub lrv: Option<PathBuf>,
+    // pub(crate) lrv_offsets: Vec<Offset>,
     /// Media Unique ID.
     /// Used for matching MP4 and LRV clips,
     /// and recording sessions.
@@ -67,6 +69,9 @@ pub struct GoProFile {
     /// representing the full GPMF data (uninterpreted).
     pub fingerprint: Vec<u8>,
     // pub fingerprint: Option<Vec<u8>>
+    pub creation_time: PrimitiveDateTime,
+    pub duration: Duration,
+    pub time_first_frame: Duration
 }
 
 // // TODO need to implement PartialOrd as well...
@@ -88,33 +93,74 @@ pub struct GoProFile {
 // }
 
 impl GoProFile {
+    // pub fn new(path: &Path, verify_gpmf: bool) -> Result<Self, GpmfError> {
     pub fn new(path: &Path) -> Result<Self, GpmfError> {
         let mut gopro = Self::default();
         
         let mut mp4 = mp4iter::Mp4::new(&path)?;
 
+
+        gopro.time_first_frame = Self::time_first_frame(&mut mp4)?;
+        mp4.reset()?;
+
+        // Get GPMF DEVC byte offsets, duration, and sizes
+        let offsets = mp4.offsets("GoPro MET")?;
+        mp4.reset()?;
+
+        let mp4_datetime = mp4.time()?;
+
+        gopro.creation_time = mp4_datetime.0;
+        gopro.duration = mp4_datetime.1;
+
         // Check if input passes setting device, MUID, GUMI...
+        // Device derived from start of mdat
         gopro.device = Self::device_internal(&mut mp4)?;
+        // MUID, GUMI determined from udta
         gopro.muid = Self::muid_internal(&mut mp4)?;
         gopro.gumi = Self::gumi_internal(&mut mp4)?;
 
         // ...and set path if ok
-        gopro.set_path(path);
+        let _filetype = gopro.set_path(path);
+        // gopro.set_offsets(&mut mp4, filetype)?;
 
         // Set fingerprint as hash of raw GPMF byte stream
         // gopro.fingerprint = GoProFile::fingerprint(path)?;
-        gopro.fingerprint = GoProFile::fingerprint_internal(&mut mp4)?;
+        gopro.fingerprint = Self::fingerprint_internal_mp4(&mut mp4, offsets.first())?;
 
         Ok(gopro)
     }
 
+    /// Time from midnight. Used for sorting clips.
+    fn time_first_frame(mp4: &mut Mp4) -> Result<Duration, GpmfError> {
+        mp4.reset()?;
+
+        let tmcd = mp4.tmcd("GoPro TCD")?;
+
+        let offset = tmcd.offsets.first()
+            .ok_or_else(|| GpmfError::NoMp4Offsets)?;
+
+        let unscaled_time = mp4.read_type_at::<u32>(offset.size as u64, offset.position, binread::Endian::Big)?;
+
+        let duration = (unscaled_time as f64 / tmcd.number_of_frames as f64).seconds();
+        
+        Ok(duration)
+    }
+
     /// Get video path.
     /// Prioritizes high-resolution video.
-    pub fn path(&self) -> Option<PathBuf> {
+    pub fn path(&self) -> Option<&Path> {
         if self.mp4.is_some() {
-            self.mp4.to_owned()
+            self.mp4.as_deref()
         } else {
-            self.lrv.to_owned()
+            self.lrv.as_deref()
+        }
+    }
+
+    pub fn filetype(path: &Path) -> Option<GoProFileType> {
+        match fileext_to_lcstring(path).as_deref() {
+            Some("mp4") => Some(GoProFileType::MP4),
+            Some("lrv") => Some(GoProFileType::LRV),
+            _ => None
         }
     }
 
@@ -140,7 +186,7 @@ impl GoProFile {
     /// to determine which high (`.MP4`) and low-resolution (`.LRV`)
     /// clips that correspond to each other. The GPMF data should be
     /// identical for high and low resolution clips.
-    pub fn fingerprint_internal(mp4: &mut mp4iter::Mp4) -> Result<Vec<u8>, GpmfError> {
+    fn fingerprint_internal_mp4(mp4: &mut mp4iter::Mp4, offset: Option<&Offset>) -> Result<Vec<u8>, GpmfError> {
         // mp4.reset()?;
         // let offsets = mp4.offsets("GoPro MET")?;
         
@@ -153,8 +199,13 @@ impl GoProFile {
         //     bytes.extend(cur.into_inner()); // a bit dumb to get out of
         // }
 
-        // Determine Blake3 hash for Vec<u8>
-        let mut cursor = Gpmf::first_raw_mp4(mp4)?;
+        let mut cursor: Cursor<Vec<u8>>;
+        if let Some(o) = offset {
+            cursor = mp4.read_at(o.position, o.size as u64)?;
+        } else {
+            // Determine Blake3 hash for Vec<u8>
+            cursor = Gpmf::first_raw_mp4(mp4)?;
+        }
         let mut hasher = blake3::Hasher::new();
         let _size = copy(&mut cursor, &mut hasher)?;
         let hash = hasher.finalize().as_bytes().to_ascii_lowercase();
@@ -171,12 +222,17 @@ impl GoProFile {
 
     /// Set high or low-resolution path
     /// depending on file extention.
-    // pub fn set_path(&mut self, path: &Path) -> Result<(), GpmfError> {
-    pub fn set_path(&mut self, path: &Path) {
+    pub fn set_path(&mut self, path: &Path) -> GoProFileType {
         match fileext_to_lcstring(path).as_deref() {
-            Some("mp4") => self.mp4 = Some(path.to_owned()),
-            Some("lrv") => self.lrv = Some(path.to_owned()),
-            _ => ()
+            Some("mp4") => {
+                self.mp4 = Some(path.to_owned());
+                GoProFileType::MP4
+            },
+            Some("lrv") => {
+                self.lrv = Some(path.to_owned());
+                GoProFileType::LRV
+            },
+            _ => GoProFileType::ANY
         }
     }
 
@@ -190,13 +246,73 @@ impl GoProFile {
         DeviceName::from_path(path)
     }
 
+    /// Returns an `mp4iter::Mp4` object for the specified filetype:
+    /// - `GoProFileType::MP4` = high-resolution clip
+    /// - `GoProFileType::LRV` = low-resolution clip
+    /// - `GoProFileType::ANY` = either, prioritizing high-resolution clip
+    pub fn mp4(&self, filetype: GoProFileType) -> Result<mp4iter::Mp4, std::io::Error> {
+        let path = match filetype {
+            GoProFileType::MP4 => self.mp4.as_ref().ok_or_else(|| GpmfError::PathNotSet)?,
+            GoProFileType::LRV => self.lrv.as_ref().ok_or_else(|| GpmfError::PathNotSet)?,
+            GoProFileType::ANY => self.path().ok_or_else(|| GpmfError::PathNotSet)?,
+        };
+        mp4iter::Mp4::new(&path)
+    }
+
+    /// Returns GPMF byte offsets as `Vec<mp4iter::offset::Offset>`
+    /// for the specified filetype:
+    /// high-res = `GoProFileType::MP4`, low-res = `GoProFileType::LRV`,
+    /// either = `GoProFileType::ANY`.
+    pub fn offsets(&self, filetype: GoProFileType) -> Result<Vec<Offset>, GpmfError> {
+        // if (filetype == GoProFileType::MP4 || filetype == GoProFileType::ANY) && !self.mp4_offsets.is_empty() {
+        //     println!("USING HI OFF");
+        //     Ok(self.mp4_offsets.to_owned())
+        // } else if (filetype == GoProFileType::LRV || filetype == GoProFileType::ANY) && !self.lrv_offsets.is_empty() {
+        //     println!("USING LO OFF");
+        //     Ok(self.lrv_offsets.to_owned())
+        // } else {
+        //     println!("DERIVE NEW OFF {filetype:?}");
+        //     let mut mp4 = self.mp4(filetype)?;
+        //     mp4.offsets("GoPro MET").map_err(|err| GpmfError::Mp4Error(err))
+        // }
+        let mut mp4 = self.mp4(filetype)?;
+        mp4.offsets("GoPro MET").map_err(|err| GpmfError::Mp4Error(err))
+    }
+
+    // fn set_offsets(&mut self, mp4: &mut mp4iter::Mp4, filetype: GoProFileType) -> Result<(), GpmfError> {
+    //     let offsets = mp4.offsets("GoPro MET")?;
+    //     match filetype {
+    //         GoProFileType::MP4 => self.mp4_offsets = offsets,
+    //         GoProFileType::LRV => self.lrv_offsets = offsets,
+    //         ft => return Err(GpmfError::InvalidGoProFileType(ft)),
+    //     }
+    //     Ok(())
+    // }
+
     /// Returns embedded GPMF data.
     pub fn gpmf(&self) -> Result<Gpmf, GpmfError> {
-        if let Some(path) = &self.path() {
-            Gpmf::new(path, false)
-        } else {
-            Err(GpmfError::PathNotSet)
-        }
+        let path = self.path().ok_or_else(|| GpmfError::PathNotSet)?;
+        Gpmf::new(path, false)
+        // if let Some(path) = &self.path() {
+        //     Gpmf::new(path, false)
+        // } else {
+        //     Err(GpmfError::PathNotSet)
+        // }
+    }
+
+    /// Returns single GPMF chunk (`DEVC`)
+    /// with `length` at specified `position` (byte offset).
+    pub fn gpmf_at_offset(
+        &self,
+        mp4: &mut mp4iter::Mp4,
+        position: u64,
+        length: u64,
+        filetype: &GoProFileType
+    ) -> Result<Gpmf, GpmfError> {
+        // let mut mp4 = self.mp4(filetype)?;
+        let mut cursor = mp4.read_at(position, length)?; // !!! TODO change offset.size to u64
+        
+        Gpmf::from_cursor(&mut cursor, false)
     }
 
     /// Returns first DEVC stream only for embedded GPMF data.
@@ -242,7 +358,7 @@ impl GoProFile {
             }
         }
 
-        Ok(Vec::new())
+        Err(GpmfError::NoMuid)
     }
 
     /// Media Unique ID
@@ -267,7 +383,7 @@ impl GoProFile {
             }
         }
 
-        Ok(Vec::new())
+        Err(GpmfError::NoMuid)
     }
 
     /// First four four digits of MUID.
@@ -295,7 +411,7 @@ impl GoProFile {
             }
         }
 
-        Ok(Vec::new())
+        Err(GpmfError::NoGumi)
     }
     /// Global Unique Media ID
     fn gumi_internal(mp4: &mut mp4iter::Mp4) -> Result<Vec<u8>, GpmfError> {
@@ -309,7 +425,15 @@ impl GoProFile {
             }
         }
 
-        Ok(Vec::new())
+        Err(GpmfError::NoGumi)
+    }
+
+    pub fn time(&self) -> Result<(time::PrimitiveDateTime, time::Duration), GpmfError> {
+        // LRV and MP4 paths will have identical duration so either is fine.
+        let path = self.path().ok_or(GpmfError::PathNotSet)?;
+        let mut mp4 = mp4iter::Mp4::new(&path)?;
+        
+        mp4.time().map_err(|err| GpmfError::Mp4Error(err))
     }
 
     /// Returns duration of clip.
@@ -335,10 +459,15 @@ impl Default for GoProFile {
         Self {
             device: DeviceName::default(),
             mp4: None,
+            // mp4_offsets: Vec::default(),
             lrv: None,
+            // lrv_offsets: Vec::default(),
             muid: Vec::default(),
             gumi: Vec::default(),
-            fingerprint: Vec::default()
+            fingerprint: Vec::default(),
+            creation_time: mp4iter::time_zero(),
+            duration: Duration::ZERO,
+            time_first_frame: Duration::ZERO,
         }
     }
 }

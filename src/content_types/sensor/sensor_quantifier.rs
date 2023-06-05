@@ -19,7 +19,7 @@ impl std::fmt::Display for SensorQuantifier {
         match &self {
             Self::Acceleration => write!(f, "Acceleration"),
             Self::Rotation => write!(f, "Rotation"),
-            Self::GravityDirection => write!(f, "GravityDirection"),
+            Self::GravityDirection => write!(f, "Gravity direction"),
             Self::Unknown => write!(f, "Unknown"),
         }
     }

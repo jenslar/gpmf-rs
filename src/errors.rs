@@ -2,6 +2,8 @@
 
 use std::{fmt, path::PathBuf};
 
+use crate::gopro::GoProFileType;
+
 /// Various GPMF related read/parse errors.
 #[derive(Debug)]
 pub enum GpmfError {
@@ -49,9 +51,14 @@ pub enum GpmfError {
     /// mainly undocumented GPMF data and is padded with
     /// zeros.
     InvalidFourCC,
+    /// Failed to find MUID
+    NoMuid,
+    /// Failed to find GUMI
+    NoGumi,
     /// For handling GPMF sources, when e.g. an MP4-file
     /// was expected but another file type was passed.
     InvalidFileType(PathBuf),
+    InvalidGoProFileType(GoProFileType),
     /// Missing path (e.g. no path set for `GoProFile`)
     PathNotSet,
     /// Model or camera not known,
@@ -86,6 +93,9 @@ impl fmt::Display for GpmfError {
             GpmfError::MissingComplexType => write!(f, "Missing type definitions for complex type '?'"),
             GpmfError::RecurseDepthExceeded((depth, max)) => write!(f, "Recurse depth {depth} exceeds max recurse depth {max}"),
             GpmfError::InvalidFourCC => write!(f, "Invalid FourCC"),
+            GpmfError::NoMuid => write!(f, "No MUID found"),
+            GpmfError::NoGumi => write!(f, "No GUMI found"),
+            GpmfError::InvalidGoProFileType(filetype) => write!(f, "Can not use {filetype:?} for this action"),
             GpmfError::InvalidFileType(path) => write!(f, "Invalid file type: '{}'", path.display()),
             GpmfError::PathNotSet => write!(f, "Path not set"),
             GpmfError::UknownDevice => write!(f, "Unknown device"),

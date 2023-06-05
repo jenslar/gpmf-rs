@@ -1,20 +1,14 @@
 //! GoPro recording session.
 
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
-    collections::HashMap
 };
 
-use time::{PrimitiveDateTime, Duration};
+use time::Duration;
 use walkdir::WalkDir;
 
-use crate::{
-    Gpmf,
-    GpmfError,
-    DeviceName,
-    files::has_extension,
-    Gps
-};
+use crate::{files::has_extension, DeviceName, Gpmf, GpmfError};
 
 use super::{GoProFile, GoProMeta};
 
@@ -38,6 +32,7 @@ impl GoProSession {
         self.0.append(&mut gopro_files.to_owned());
     }
 
+    /// Remove file via its vector index.
     pub fn remove(&mut self, index: usize) {
         self.0.remove(index);
     }
@@ -66,8 +61,31 @@ impl GoProSession {
         self.0.last_mut()
     }
 
+    pub fn as_slice(&self) -> &[GoProFile] {
+        &self.0
+    }
+
+    // Derive 'basename' for session from first clip in session,
+    // high-res or low-res clip (prioritized).
+    pub fn basename(&self) -> Option<String> {
+        let path = self
+            .first()
+            .and_then(|gp| gp.mp4.as_deref().or_else(|| gp.lrv.as_deref()));
+
+        if let Some(p) = path {
+            p.file_stem().map(|s| s.to_string_lossy().to_string())
+        } else {
+            None
+        }
+    }
+
     pub fn device(&self) -> Option<&DeviceName> {
         self.first().map(|gp| &gp.device)
+    }
+
+    /// Create a session from a single clip.
+    pub fn single(path: &Path) -> Result<Self, GpmfError> {
+        Ok(Self(vec![GoProFile::new(path)?]))
     }
 
     /// Parses and merges GPMF-data for all
@@ -85,94 +103,39 @@ impl GoProSession {
     /// Hero5 Black embed an undocumented
     /// GPMF stream here that is also included.
     pub fn meta(&self) -> Vec<GoProMeta> {
-        self.0.iter()
-            .filter_map(|gp| gp.meta().ok())
-            .collect()
+        self.0.iter().filter_map(|gp| gp.meta().ok()).collect()
     }
 
     /// Returns paths to high-resolution MP4-clips if set (`.MP4`).
     pub fn mp4(&self) -> Vec<PathBuf> {
-        self.iter()
-            .filter_map(|f| f.mp4.to_owned())
-            .collect()
+        self.iter().filter_map(|f| f.mp4.to_owned()).collect()
     }
 
     /// Returns paths to low-resolution MP4-clips if set (`.LRV`).
     pub fn lrv(&self) -> Vec<PathBuf> {
-        self.iter()
-            .filter_map(|f| f.lrv.to_owned())
-            .collect()
+        self.iter().filter_map(|f| f.lrv.to_owned()).collect()
     }
 
     /// Returns `true` if paths are set for all high-resolution clips in session.
     pub fn matched_lo(&self) -> bool {
-        match self.iter().any(|gp| gp.lrv.is_none()) {
-            true => false,
-            false => true
-        }
+        !self.iter().any(|gp| gp.lrv.is_none())
     }
 
     /// Returns `true` if paths are set for all low-resolution clip in session.
     pub fn matched_hi(&self) -> bool {
-        match self.iter().any(|gp| gp.mp4.is_none()) {
-            true => false,
-            false => true
-        }
+        !self.iter().any(|gp| gp.mp4.is_none())
     }
 
-    /// Sort GoPro clips in session based on GPS timestamps (meaning
-    /// GPS is required). No other continuous timeline for the session exists.
+    pub fn offsets(&self) {
+        // let mp4 = self.0
+    }
+
+    /// Sort clips chronologically by `GoProFile::time_first_frame`.
     /// 
-    /// To speed things up only the first DEVC container is used for sorting.
-    /// It should be sufficient since even if the device has not yet acquired
-    /// a GPS lock, the timestamp should still precede those in the clips
-    /// that follow.
-    /// 
-    /// `prune = true` prunes files that return an error on parsing the GPMF stream.
-    /// Will otherwise fail on first corrupt file.
-    pub fn sort_gps(&mut self, prune: bool) -> Result<Self, GpmfError> {
-        let mut dt_gp: Vec<(PrimitiveDateTime, GoProFile)> = Vec::new();
-        let mut remove_index: Vec<usize> = Vec::new();
-
-        for (i, gp) in self.0.iter_mut().enumerate() {
-            // Extract GPS log, and filter out points with bad satellite lock
-            let mut gps = Gps::default();
-            if prune {
-                // TODO testing using only the first DEVC, since timestamp
-                // TODO while incorrect should still be in chronological order
-                if let Ok(gpmf) = gp.gpmf_first() {
-                    gps = gpmf.gps().prune(2, None); // now checks model, uses gps9 for hero11 gps5 otherwise
-                } else {
-                    // Add index of GoProFile for removal for file
-                    // that raised error then continue to next file
-                    remove_index.push(i);
-                    continue;
-                }
-            } else {
-                gps = gp.gpmf_first()?.gps().prune(2, None); // now checks model, uses gps9 for hero11 gps5 otherwise
-            }
-            // Return error if no points were logged
-            // If one file in sequence does not contains GPS data,
-            // neither should any of the other since GoPro logs
-            // last known location with no satellite lock.
-            // I.e. no points at all indicates the GPS was turned off.
-            if gps.len() == 0 {
-                return Err(GpmfError::NoData)
-            }
-            if let Some(t) = gps.first().map(|p| p.datetime) {
-                dt_gp.push((t, gp.to_owned()))
-            }
-        }
-
-        // Pruning added indeces for files that raised errors, if prune = true
-        for index in remove_index.iter() {
-            self.remove(*index)
-        }
-
-        // Sort remaining files by first good GPS datetime in each file.
-        dt_gp.sort_by_key(|(t, _)| t.to_owned());
-
-        Ok(Self(dt_gp.iter().map(|(_, gp)| gp.to_owned()).collect::<Vec<_>>()))
+    /// This is so far the only timestamp that is
+    /// progressive across clips in the same session.
+    pub fn sort(&mut self) {
+        self.0.sort_by_key(|k| k.time_first_frame)
     }
 
     /// Sort GoPro clips in session based on filename.
@@ -183,7 +146,7 @@ impl GoProSession {
         let sort_on_hi = match (self.matched_hi(), self.matched_lo()) {
             (true, _) => true,
             (false, true) => false,
-            (false, false) => return Err(GpmfError::PathNotSet)
+            (false, false) => return Err(GpmfError::PathNotSet),
         };
         let mut files = self.0.to_owned();
         files.sort_by_key(|gp| {
@@ -200,13 +163,21 @@ impl GoProSession {
     /// Find all clips in session containing `video`.
     /// `dir` is the starting point for searching for clips.
     /// If `dir` is `None` the parent dir of `video` is used.
-    pub fn from_path(video: &Path, dir: Option<&Path>, verbose: bool) -> Option<Self> {
+    pub fn from_path(
+        video: &Path,
+        dir: Option<&Path>,
+        verify_gpmf: bool,
+        // no_gps: bool,
+        verbose: bool,
+    ) -> Option<Self> {
         let indir = match dir {
             Some(d) => d,
-            None => video.parent()?
+            None => video.parent()?,
         };
-        let sessions = Self::sessions_from_path(indir, Some(video), verbose);
-        
+
+        // let sessions = Self::sessions_from_path(indir, Some(video), verify_gpmf, no_gps, verbose);
+        let sessions = Self::sessions_from_path(indir, Some(video), verify_gpmf, verbose);
+
         sessions.first().cloned()
     }
 
@@ -215,29 +186,34 @@ impl GoProSession {
     /// file is encounterd twice it will only yield a single result.
     /// I.e. this function is not intended to be a "find all GoPro files",
     /// only "find and group unique GoPro files".
+    ///
+    /// `verify_gpmf` does a full parse on each GoPro file, and discards
+    /// corrupt ones.
+    /// `no_gps` will avoid sorting sessions using GPS data and use filename instead.
     pub fn sessions_from_path(
         dir: &Path,
         video: Option<&Path>,
-        verbose: bool
+        verify_gpmf: bool,
+        // no_gps: bool, // force sorting by filename
+        verbose: bool,
     ) -> Vec<Self> {
-        // Key = Blake3 hash as Vec<u8> of extracted GPMF raw bytes 
+        // Key = Blake3 hash as Vec<u8> of extracted GPMF raw bytes
+        // TODO below should be Vec<GoProFile> then use first one that produces GPMF with no errors when sorting
         let mut hash2gopro: HashMap<Vec<u8>, GoProFile> = HashMap::new();
 
         let gopro_in_session = match video {
-            Some(p) => {
-                GoProFile::new(p).ok()
-            },
-            _ => None
+            Some(p) => GoProFile::new(p).ok(),
+            _ => None,
         };
 
         let mut count = 0;
 
-        // 1. Go through files, set 
+        // 1. Go through files, set
         for result in WalkDir::new(dir) {
             let path = match result {
                 Ok(f) => f.path().to_owned(),
                 // Ignore errors, since these are often due to lack of read permissions
-                Err(_) => continue
+                Err(_) => continue,
             };
 
             // Currently only know how mp4+lrv matches for hero11,
@@ -248,14 +224,30 @@ impl GoProSession {
             // processed twice.
             // if has_extension(&path, "mp4") | has_extension(&path, "lrv") {
             if let Some(ext) = has_extension(&path, &["mp4", "lrv"]) {
+                // if let Ok(gp) = GoProFile::new(&path, verify_gpmf) {
                 if let Ok(gp) = GoProFile::new(&path) {
                     if verbose {
                         count += 1;
-                        println!("{:4}. [{:12} {}] {}",
+                        print!(
+                            "{:4}. [{:12} {}] {}",
                             count,
                             gp.device.to_str(),
                             ext.to_uppercase(),
-                            path.display());
+                            path.display()
+                        );
+                    }
+
+                    // Optionally do a full GPMF parse to prune
+                    // corrupt files (will otherwise possibly overwrite entry in hashmap)
+                    if verify_gpmf {
+                        if let Err(_err) = gp.gpmf() {
+                            println!(" [SKIPPING: GPMF ERROR]");
+                            continue;
+                        } else {
+                            println!(" [GPMF OK]");
+                        }
+                    } else {
+                        println!("");
                     }
 
                     if let Some(gp_session) = &gopro_in_session {
@@ -267,7 +259,7 @@ impl GoProSession {
                                 if gp.muid != gp_session.muid {
                                     continue;
                                 }
-                            },
+                            }
                             _ => {
                                 if gp.gumi != gp_session.gumi {
                                     continue;
@@ -277,8 +269,10 @@ impl GoProSession {
                     }
 
                     // `set_path()` sets MP4 or LRV path based on file extension
-                    hash2gopro.entry(gp.fingerprint.to_owned())
-                        .or_insert(gp).set_path(&path);
+                    hash2gopro
+                        .entry(gp.fingerprint.to_owned())
+                        .or_insert(gp)
+                        .set_path(&path);
                 }
             }
         }
@@ -309,33 +303,27 @@ impl GoProSession {
         }
 
         // Compile all sessions
-        let mut sessions = muid2gopro.iter()
-            .map(|(_, sessions1)| GoProSession(sessions1.to_owned()))
+        let mut sessions = muid2gopro
+            .iter()
+            .map(|(_, session)| Self(session.to_owned()))
             .chain(
-                gumi2gopro.iter()
-                .map(|(_, sessions2)| GoProSession(sessions2.to_owned()))
+                gumi2gopro
+                    .iter()
+                    .map(|(_, session)| Self(session.to_owned())),
             )
             .collect::<Vec<_>>();
 
         // 3. Sort files within groups on GPS datetime to determine sequence
         // TODO possible that duplicate files (with different paths) will be included
-        let sorted_sessions = sessions.iter_mut()
-            .filter_map(|s| if s.len() == 1 {
-                // Avoid parsing GPS to sort for single-clip sessions
-                Some(s.to_owned())
-            } else {
-                s.sort_gps(true).ok()
-            })
-            .collect::<Vec<_>>();
+        sessions.iter_mut()
+            .for_each(|s| s.sort());
 
-        sorted_sessions
+        sessions
     }
 
     /// Returns duration of session.
     pub fn duration(&self) -> Result<Duration, GpmfError> {
-        self.iter()
-            .map(|g| g.duration())
-            .sum()
+        self.iter().map(|g| g.duration()).sum()
     }
 
     /// Returns duration of session as milliseconds.

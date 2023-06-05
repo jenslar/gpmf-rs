@@ -11,8 +11,13 @@ use super::{FourCC, Header, Value, Timestamp};
 /// or data values.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stream {
+    /// Stream header
     pub header: Header,
+    /// Child streams
     pub streams: StreamType,
+    /// Relative timestamps.
+    /// Duration since video start and "sample duration"
+    /// of stream.
     pub time: Option<Timestamp>,
 }
 
@@ -315,6 +320,8 @@ impl Stream {
         match &self.streams {
             StreamType::Values(_) => return Vec::new(),
             StreamType::Nested(strms) => {
+                // streams.append(
+                //     &mut strms.iter()
                 streams.extend(
                     strms.iter()
                         // .inspect(|s| println!("{:?}", s.fourcc()))
@@ -385,7 +392,8 @@ impl Stream {
     /// Thus, GPMF data extracted via e.g. `ffmpeg` or in the MP4 `udta` atom
     /// will not and can not have timestamps.
     pub fn time_relative(&self) -> Option<time::Duration> {
-        Some(self.time.as_ref()?.to_relative())
+        // Some(self.time.as_ref()?.to_relative())
+        self.time.as_ref().map(|t| t.relative)
     }
 
     /// Returns duration for current GPMF chunk if set.
@@ -393,15 +401,19 @@ impl Stream {
     /// > **Note:** All `Stream`s have timestamps derived from
     /// the original MP4 (at the `DEVC` container level).
     /// The current, official GPMF specification
-    /// does not implement logging time stamps for individual data points.
+    /// does not implement logging time stamps for individual data points,
+    /// other than for `GPS9` devices (Hero11 and newer).
     /// Thus, GPMF data extracted via e.g. `ffmpeg` or in the MP4 `udta` atom
     /// will not and can not have timestamps.
     pub fn time_duration(&self) -> Option<time::Duration> {
-        Some(self.time.as_ref()?.to_duration())
+        // Some(self.time.as_ref()?.to_duration())
+        self.time.as_ref().map(|t| t.duration)
     }
 
-    pub fn time_duration_ms(&self) -> Option<time::Duration> {
-        Some(self.time.as_ref()?.to_duration())
+    // pub fn time_duration_ms(&self) -> Option<time::Duration> {
+    pub fn time_duration_ms(&self) -> Option<i128> {
+        // Some(self.time.as_ref()?.to_duration())
+        Some(self.time.as_ref()?.duration_ms())
     }
 
     /// Find first stream with specified `DataType`.

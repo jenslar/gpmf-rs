@@ -111,4 +111,16 @@ impl SensorData {
     pub fn len(&self) -> usize {
         self.fields.len()
     }
+
+    pub fn x(&self) -> Vec<f64> {
+        self.fields.iter().map(|sf| sf.x).collect()
+    }
+
+    pub fn y(&self) -> Vec<f64> {
+        self.fields.iter().map(|sf| sf.y).collect()
+    }
+
+    pub fn z(&self) -> Vec<f64> {
+        self.fields.iter().map(|sf| sf.z).collect()
+    }
 }
