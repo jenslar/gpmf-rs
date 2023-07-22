@@ -1,8 +1,8 @@
 //! GPMF header that precedes each GPMF stream.
 
-use std::{io::Cursor, fmt};
+use std::{io::{BufRead, Seek, Read}, fmt};
 
-use binread::BinReaderExt;
+use binrw::BinReaderExt;
 
 use super::FourCC;
 use crate::GpmfError;
@@ -53,21 +53,23 @@ impl Header {
     /// becomes structure size X (byte length of utf-8 string), repeat 1, e.g. for older devices:
     /// `['G'] ['y'] ['r'] ['o']`, will instead be parsed into `['G', 'y', 'r', 'o']` -> String "Gyro".
     /// This is also true for Huffman encoded data loads, but these are currently not supported.
-    pub fn new(cursor: &mut Cursor<Vec<u8>>) -> Result<Self, GpmfError> {
-        let fourcc = FourCC::new(cursor)?;
+    // pub fn new(reader: &mut BufReader<File>) -> Result<Self, GpmfError> {
+    // pub fn new<R: Read + BufRead + Seek>(reader: &mut R) -> Result<Self, GpmfError> {
+    pub fn new<R: Read + BufRead + Seek>(reader: &mut R) -> Result<Self, GpmfError> {
+        let fourcc = FourCC::new(reader)?;
 
         // check for "\0" and if found set header fourcc as invalid
         if fourcc.is_invalid() {
             return Ok(Self::default())
         }
 
-        let basetype: u8 = cursor.read_ne()?;
+        let basetype: u8 = reader.read_ne()?;
 
         // Temp valus for GPMF structure size.
         // Switch places between size and repeat if
         // size is 1.
-        let tmp_basesize: u8 = cursor.read_ne()?;
-        let tmp_repeats: u16 = cursor.read_be()?;
+        let tmp_basesize: u8 = reader.read_ne()?;
+        let tmp_repeats: u16 = reader.read_be()?;
 
         // Check if structure size = 1 and basesize is a char,
         // and switch places if so to simplify string parsing.
@@ -120,7 +122,7 @@ impl Header {
             // Value::Sint16, Uint16
             b's' | b'S' => 2,
 
-            // Value::Sint32, Sint32, Uint32, FLoat32, Qint32, FourCC
+            // Value::Sint32, Sint32, Uint32, Float32, Qint32, FourCC
             b'l' | b'L' | b'f' | b'q' | b'F' => 4,
 
             // Value::Float64, Sint64, Uint64, Qint64

@@ -1,9 +1,5 @@
-use std::borrow::BorrowMut;
-
-use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use time::{PrimitiveDateTime, macros::datetime, ext::NumericalDuration, Duration};
-
-use crate::{Timestamp, FourCC, Stream, GpmfError, content_types::primitivedatetime_to_string};
+use crate::{FourCC, Stream, GpmfError, content_types::primitivedatetime_to_string};
 
 /// Point derived from GPS data stream.
 #[derive(Debug, Clone)]

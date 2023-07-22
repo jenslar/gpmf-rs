@@ -1,5 +1,4 @@
-//! Processing and conversion of various kinds of sensor data.
-//! Currently only GPS is supported. The rest will be added gradually.
+//! Processing of GPS and various kinds of sensor data.
 
 use time::{PrimitiveDateTime, format_description};
 

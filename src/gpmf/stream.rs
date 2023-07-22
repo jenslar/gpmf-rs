@@ -1,6 +1,6 @@
 //! Core data structure for GPMF streams, containing either more streams or raw values.
 
-use std::io::{Cursor, Seek, SeekFrom};
+use std::io::{Seek, SeekFrom, Read, BufRead};
 
 use crate::{DataType, GpmfError, gopro::Dvid};
 use super::{FourCC, Header, Value, Timestamp};
@@ -30,22 +30,19 @@ pub enum StreamType {
 }
 
 impl Stream {
-    /// Parse GPMF chunk corresponding to one or more `Stream`s recursively.
-    /// For GoPro MP4-files use `Stream::compile()` instead.
+    /// Create new GPMF `Stream` from reader, e.g. a
+    /// `BufReader` over an MP4-file. Read limit in bytes
+    /// must be manually set to represent the size of
+    /// the GPMF stream.
     /// 
-    /// For GPMF data extracted with e.g. FFmpeg, the cursor will initially
-    /// correspond to the full data load (i.e. all `DEVC` containers),
-    /// whereas for MP4 files it will initially correspond to the number
-    /// of `DEVC` containers at a specific byte offeset in the MP4.
-    /// 
-    /// `read_limit` is used to avoid embeddning nested streams/containters that
-    /// follow directly after each other into other nested streams.
-    /// Since `Stream::new()` calls itself recusively each container will otherwise
-    /// emded the next until end of cursor.
-    // pub fn new(cursor: &mut Cursor<Vec<u8>>, read_limit: Option<usize>) -> Result<Vec<Self>, GpmfError> {
-    pub fn new(
-        cursor: &mut Cursor<Vec<u8>>,
-        read_limit: Option<usize>,
+    /// Some GoPro devices generate more than one stream
+    /// for each chunk, hence returning `Vec<Stream>`,
+    /// rather than just `Stream`. The discontinued Karma drone
+    /// logged one stream for the attached camera and one for
+    /// the drone itself.
+    pub fn new<R: Read + BufRead + Seek>(
+        reader: &mut R,
+        read_limit: usize,
         debug: bool
     ) -> Result<Vec<Self>, GpmfError> {
 
@@ -55,22 +52,20 @@ impl Stream {
 
         let mut streams: Vec<Self> = Vec::new();
 
-        // End position in bytes, with optional read limit equal to current
-        // cursor position + set limit value. To avoid recusively
-        // embedding containers that follow directly after each other.
-        let len = match read_limit {
-            Some(l) => cursor.position() as usize + l,
-            None => cursor.get_ref().len()
-        };
-
         // TODO check if read limit should substract header size above or below? works any way right now...
 
-        while cursor.position() < len as u64 {
+        let max = reader.seek(SeekFrom::Current(0))? + read_limit as u64;
+        // let mut count = 0;
+        while reader.seek(SeekFrom::Current(0))? < max {
+            // println!("{} LOOPING OVER MP4", count + 1);
+            // count += 1;
             // 8 byte header
-            let header = Header::new(cursor)?;
+            let header = Header::new(reader)?;
+            // dbg!(&header);
+            // let header = Header::new(&mut cursor)?;
 
             if debug {
-                println!("@{} {header:3?} | LEN: {}", cursor.position(), header.size(true) + 8); // position is only offset from start of current DEVC, not entire MP4
+                println!("@{} {header:3?} | LEN: {}", reader.seek(SeekFrom::Current(0))?, header.size(true) + 8); // position is only offset from start of current DEVC, not entire MP4
             }
             
             // `FourCC::Invalid` currently a check for `&[0,0,0,0, ...]`
@@ -91,7 +86,7 @@ impl Stream {
                     // Set byte read limit to avoid embedding containers/0 in each other indefinitely if they
                     // follow directly after each other.
                     // let stream = Self::new(cursor, Some(header.size(false) as usize))?;
-                    let stream = Self::new(cursor, Some(header.size(false) as usize), debug)?;
+                    let stream = Self::new(reader, header.size(false) as usize, debug)?;
 
                     streams.push(Self{
                         header,
@@ -111,7 +106,7 @@ impl Stream {
                         values.push(Value::Empty)
                     } else {
                         for _ in 0..header.repeats {
-                            values.push(Value::new(cursor, &header, complex.as_deref())?);
+                            values.push(Value::new(reader, &header, complex.as_deref())?);
                         }
                     }
 
@@ -133,7 +128,7 @@ impl Stream {
 
             // Seek forward equal to header padding value (0-3 bytes),
             // past 0 padding, for 32-bit alignment.
-            cursor.seek(SeekFrom::Current(pad as i64))?;
+            reader.seek(SeekFrom::Current(pad as i64))?;
         }
 
         Ok(streams)
@@ -266,12 +261,6 @@ impl Stream {
         }
     }
 
-    // /// Returns the duration in milliseconds for the current stream if set.
-    // /// For a more accurate media source/s duration, use `Gpmf::duration()`.
-    // pub fn duration(&self) -> Option<u32> {
-    //     Some(self.time.to_owned()?.relative)
-    // }
-
     pub fn is_nested(&self) -> bool {
         matches!(self.streams, StreamType::Nested(_))
     }
@@ -365,7 +354,6 @@ impl Stream {
             StreamType::Values(_) => vec![],
             StreamType::Nested(streams) => {
                 streams.iter()
-                    // .inspect(|s| println!("{:?}", s.fourcc()))
                     .filter(|s| s.has_fourcc(fourcc))
                     .cloned()
                     .collect()
@@ -392,7 +380,6 @@ impl Stream {
     /// Thus, GPMF data extracted via e.g. `ffmpeg` or in the MP4 `udta` atom
     /// will not and can not have timestamps.
     pub fn time_relative(&self) -> Option<time::Duration> {
-        // Some(self.time.as_ref()?.to_relative())
         self.time.as_ref().map(|t| t.relative)
     }
 
@@ -406,14 +393,12 @@ impl Stream {
     /// Thus, GPMF data extracted via e.g. `ffmpeg` or in the MP4 `udta` atom
     /// will not and can not have timestamps.
     pub fn time_duration(&self) -> Option<time::Duration> {
-        // Some(self.time.as_ref()?.to_duration())
         self.time.as_ref().map(|t| t.duration)
     }
 
-    // pub fn time_duration_ms(&self) -> Option<time::Duration> {
     pub fn time_duration_ms(&self) -> Option<i128> {
-        // Some(self.time.as_ref()?.to_duration())
-        Some(self.time.as_ref()?.duration_ms())
+        // Some(self.time.as_ref()?.duration_ms())
+        self.time.as_ref().map(|t| t.duration_ms())
     }
 
     /// Find first stream with specified `DataType`.

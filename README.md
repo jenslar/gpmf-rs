@@ -12,13 +12,24 @@ gpmf-rs = {git = "https://github.com/jenslar/gpmf-rs.git"}
 
 `src/main.rs`:
 ```rs
-use gpmf_rs::Gpmf;
+use gpmf_rs::{Gpmf, SensorType};
 use std::path::Path;
 
 fn main() -> std::io::Result<()> {
     let path = Path::new("GOPRO_VIDEO.MP4");
-    let gpmf = Gpmf::new(&path)?;
+
+    // Extract GPMF data without printing debug info while parsing
+    let gpmf = Gpmf::new(&path, false)?;
     println!("{gpmf:#?}");
+
+    // Filter and process GPS log, prune points that do not have at least a 2D fix
+    let gps = gpmf.gps().prune(2);
+    println!("{gps:#?}");
+
+    // Filter and process accelerometer data.
+    let sensor = gpmf.sensor(&SensorType::Accelerometer);
+    println!("{sensor:#?}");
+
     Ok(())
 }
 ```

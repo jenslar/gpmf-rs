@@ -1,7 +1,7 @@
-//! Covers GoPro 3D sensors. Supported sensors are:.
+//! Covers GoPro 3D sensors. Supported sensor data:
 //! - Accelerometer
 //! - Gyroscope
-//! - Gravity
+//! - Gravity Vector
 
 mod sensor_data;
 mod sensor_type;

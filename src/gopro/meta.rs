@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use binread::{BinResult, BinReaderExt};
+use binrw::{BinResult, BinReaderExt};
 use mp4iter::{FourCC, Mp4, UdtaField};
 
 use crate::{Stream, GpmfError};
@@ -25,7 +25,7 @@ impl GoProMeta {
     /// Mix of "normal" MP4 atom structures and GPMF-stream.
     pub fn new(path: &Path, debug: bool) -> Result<Self, GpmfError> {
         let mut mp4 = Mp4::new(path)?;
-        let mut udta = mp4.udta()?;
+        let mut udta = mp4.udta(false)?;
 
         let mut meta = Self::default();
         meta.path = path.to_owned();
@@ -35,7 +35,8 @@ impl GoProMeta {
 
         for field in udta.fields.iter_mut() {
             if fourcc_gpmf == field.name {
-                meta.gpmf.extend(Stream::new(&mut field.data, None, debug)?);
+                let len = field.data.get_ref().len();
+                meta.gpmf.extend(Stream::new(&mut field.data, len, debug)?);
             } else {
                 meta.udta.push(field.to_owned())
             }

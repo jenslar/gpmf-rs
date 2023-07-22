@@ -46,31 +46,3 @@ impl SensorField {
         })
     }
 }
-
-// /// Used for GPS:
-// /// - `GPS5` devices add GPS fix, dop, 2D speed, 3D speed (per-cluster)
-// /// - `GPS9` devices add GPS fix, dop, 2D speed, 3D speed (per-point)
-// pub enum SensorFieldExtension {
-//     GPS {
-//         /// 2D speed.
-//         speed2d: f64,
-//         /// 3D speed.
-//         speed3d: f64,
-//         // /// Heading 0-360 degrees
-//         // heading: f64,
-//         /// Datetime derived from `GPSU` message.
-//         datetime: PrimitiveDateTime,
-//         /// DOP, dilution of precision.
-//         /// `GPSP` for `GPS5` device (Hero10 and earlier),
-//         /// Value at index 7 in `GPS9` array (Hero11 and later)
-//         /// A parsed value below 0.5 is good according
-//         /// to GPMF docs.
-//         dop: Option<f64>,
-//         /// GPSF for GPS5 device (Hero10 and earlier),
-//         /// Value nr 9 in GPS9 array (Hero11 and later)
-//         fix: Option<u32>,
-//         /// Timestamp
-//         time: Option<Timestamp>,
-//     },
-//     GRAV,
-// }

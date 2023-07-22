@@ -1,4 +1,5 @@
-//! GoPro recording session.
+//! GoPro recording session. Container for `GoProFile`, listing all clips that belong
+//! to one recording session chronologically.
 
 use std::{
     collections::HashMap,
@@ -16,14 +17,17 @@ use super::{GoProFile, GoProMeta};
 pub struct GoProSession(Vec<GoProFile>);
 
 impl GoProSession {
+    /// Number of clips in session.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Returns `true` if session contains no clips.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Add `GoProFile` last to session.
     pub fn add(&mut self, gopro_file: &GoProFile) {
         self.0.push(gopro_file.to_owned());
     }
@@ -65,8 +69,10 @@ impl GoProSession {
         &self.0
     }
 
-    // Derive 'basename' for session from first clip in session,
-    // high-res or low-res clip (prioritized).
+    /// Derive 'basename' for session from first clip in session,
+    /// high-res or low-res clip (prioritized).
+    /// E.g. if session contains `GH010026.MP4, GH020026.MP4, GH030026.MP4`,
+    /// `GH010026` will be returned.
     pub fn basename(&self) -> Option<String> {
         let path = self
             .first()
@@ -79,6 +85,7 @@ impl GoProSession {
         }
     }
 
+    /// Returns device name for camera used.
     pub fn device(&self) -> Option<&DeviceName> {
         self.first().map(|gp| &gp.device)
     }
@@ -175,7 +182,6 @@ impl GoProSession {
             None => video.parent()?,
         };
 
-        // let sessions = Self::sessions_from_path(indir, Some(video), verify_gpmf, no_gps, verbose);
         let sessions = Self::sessions_from_path(indir, Some(video), verify_gpmf, verbose);
 
         sessions.first().cloned()
@@ -189,12 +195,10 @@ impl GoProSession {
     ///
     /// `verify_gpmf` does a full parse on each GoPro file, and discards
     /// corrupt ones.
-    /// `no_gps` will avoid sorting sessions using GPS data and use filename instead.
     pub fn sessions_from_path(
         dir: &Path,
         video: Option<&Path>,
         verify_gpmf: bool,
-        // no_gps: bool, // force sorting by filename
         verbose: bool,
     ) -> Vec<Self> {
         // Key = Blake3 hash as Vec<u8> of extracted GPMF raw bytes
@@ -216,15 +220,7 @@ impl GoProSession {
                 Err(_) => continue,
             };
 
-            // Currently only know how mp4+lrv matches for hero11,
-            // and how mp4 (not lrv) matches for hero7
-            // As for setting both MP4 and LRV path,
-            // `GoProFile::new()` checks parent folder only
-            // The above may mean the same file may be
-            // processed twice.
-            // if has_extension(&path, "mp4") | has_extension(&path, "lrv") {
             if let Some(ext) = has_extension(&path, &["mp4", "lrv"]) {
-                // if let Ok(gp) = GoProFile::new(&path, verify_gpmf) {
                 if let Ok(gp) = GoProFile::new(&path) {
                     if verbose {
                         count += 1;

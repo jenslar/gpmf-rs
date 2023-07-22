@@ -22,7 +22,8 @@
 //! ```
 
 use std::collections::HashSet;
-use std::io::Cursor;
+use std::fs::File;
+use std::io::{Cursor, BufReader};
 use std::path::{PathBuf, Path};
 
 use jpegiter::{Jpeg, JpegTag};
@@ -30,7 +31,7 @@ use rayon::prelude::{
     IntoParallelRefMutIterator,
     IndexedParallelIterator,
     IntoParallelRefIterator,
-    ParallelIterator
+    ParallelIterator, IntoParallelIterator
 };
 use time::{PrimitiveDateTime, Duration};
 use time::macros::datetime;
@@ -75,7 +76,7 @@ impl Gpmf {
     /// 
     /// fn main() -> std::io::Result<()> {
     ///     let path = Path::new("GOPRO_VIDEO.MP4");
-    ///     let gpmf = Gpmf::new(&path)?;
+    ///     let gpmf = Gpmf::new(&path, false)?;
     ///     Ok(())
     /// }
     /// ```
@@ -122,15 +123,15 @@ impl Gpmf {
         let offsets = mp4.offsets("GoPro MET")?;
 
         if let Some(offset) = offsets.first() {
-            mp4.read_at(offset.position, offset.size as u64)
-                .map_err(|err| err.into())
+            Ok(mp4.cursor_at(offset.position, offset.size as u64)?)
         } else {
             Err(GpmfError::NoMp4Offsets)
         }
     }
 
+    // !!! use mp4 bufreader directly instead of creating vec + cursors
+    // !!! but means not possible to parallellize
     /// Returns the embedded GPMF streams in a GoPro MP4 file.
-    // pub fn from_mp4(path: &Path) -> Result<Self, GpmfError> {
     pub fn from_mp4(path: &Path, debug: bool) -> Result<Self, GpmfError> {
         let mut mp4 = mp4iter::Mp4::new(path)?;
 
@@ -139,6 +140,16 @@ impl Gpmf {
         // TODO        though in microsecs: 110-200us old vs 240-600us new.
         // 1. Extract position/byte offset, size, and time span for GPMF chunks.
         let offsets = mp4.offsets("GoPro MET")?;
+
+        // !!! below is much simpler but unfortunatelt a lot slower
+        // let mut streams: Vec<Stream> = Vec::new();
+        // // let mut timestamp = Timestamp::default();
+        // for o in offsets.iter() {
+        //     mp4.seek_to(o.position)?; // seek to DEVC offset
+        //     let stream = Stream::new(mp4.reader(), o.size as usize, debug)?;
+        //     streams.extend(stream)
+        //     // stream.iter_mut()
+        // }
         
         // Faster than a single, serial iter so far.
         // 2. Read data at MP4 offsets and generate timestamps serially
@@ -148,10 +159,6 @@ impl Gpmf {
                 // 1. Create timestamp
                 let timestamp = timestamps.last()
                     .map(|t| Timestamp {
-                        // relative: t.relative + o.duration,
-                        // duration: o.duration,
-                        // relative: t.relative + Duration::seconds(o.duration as i64),
-                        // duration: Duration::seconds(o.duration as i64),
                         relative: t.relative + Duration::milliseconds(o.duration as i64),
                         duration: Duration::milliseconds(o.duration as i64),
                     }).unwrap_or(Timestamp {
@@ -161,8 +168,8 @@ impl Gpmf {
                 timestamps.push(timestamp);
 
                 // 2. Read and return data at MP4 offsets
-                mp4.read_at(o.position, o.size as u64)
-                    .map_err(|e| GpmfError::Mp4Error(e))
+                mp4.cursor_at(o.position, o.size as u64)
+                    .map_err(|e| e.into())
             })
             .collect::<Result<Vec<_>, GpmfError>>()?;
 
@@ -170,9 +177,8 @@ impl Gpmf {
 
         // 3. Parse each data chunk/cursor into Vec<Stream>.
         let streams = cursors.par_iter_mut().zip(timestamps.par_iter())
-            .map(|(cursor, t)| {
-                // let stream = Stream::new(cursor, None)
-                let stream = Stream::new(cursor, None, debug)
+            .map(|(cur, t)| {
+                let stream = Stream::new(cur, cur.get_ref().len(), debug)
                     .map(|mut strm| {
                         // 1-2 streams. 1 for e.g. Hero lineup, 2 for Karma drone (1 for drone, 1 for attached cam)
                         strm.iter_mut().for_each(|s| s.set_time(t));
@@ -181,9 +187,8 @@ impl Gpmf {
                 stream
             })
             .collect::<Result<Vec<_>, GpmfError>>()? // Vec<Vec<Stream>>, need to flatten
-            .par_iter()
+            .into_par_iter()
             .flatten_iter() // flatten will mix drone data with cam data, perhaps bad idea
-            .cloned()
             .collect::<Vec<_>>();
 
         Ok(Self{
@@ -201,31 +206,35 @@ impl Gpmf {
 
         if let Some(mut app6) = segment {
             app6.seek(6); // seek past `GoPro\null`
-            // return Self::from_cursor(&mut app6.data)
-            return Self::from_cursor(&mut app6.data, debug)
+            let len = app6.data.get_ref().len();
+            let stream = Stream::new(&mut app6.data, len, debug)?;
+            return Ok(Self {
+                streams: stream,
+                source: vec![path.to_owned()]
+            })
         } else {
             Err(GpmfError::InvalidFileType(path.to_owned()))
         }
     }
 
-    /// Returns GPMF from a "raw" GPMF-file,
-    /// e.g. the "GoPro MET" track extracted from a GoPro MP4 with FFMpeg.
+    /// Returns GPMF from a "raw" GPMF-file, i.e. a file that holds only
+    /// GPMF data.
+    /// E.g. the "GoPro MET" track extracted from a GoPro MP4 with FFMpeg.
     pub fn from_raw(path: &Path, debug: bool) -> Result<Self, GpmfError> {
-        // TODO do a buffered read instead of arbitrary max size value?
-        let max_size = 50_000_000_u64; // max in-memory size set to 50MB
+        // let max_size = 50_000_000_u64; // changed to bufreader
         let size = path.metadata()?.len();
 
-        if size > max_size {
-            return Err(GpmfError::MaxFileSizeExceeded{
-                max: max_size,
-                got: size,
-                path: path.to_owned()
-            })
-        }
+        // if size > max_size {
+        //     return Err(GpmfError::MaxFileSizeExceeded{
+        //         max: max_size,
+        //         got: size,
+        //         path: path.to_owned()
+        //     })
+        // }
 
-        let mut cursor = Cursor::new(std::fs::read(path)?);
-        // let streams = Stream::new(&mut cursor, None)?;
-        let streams = Stream::new(&mut cursor, None, debug)?;
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+        let streams = Stream::new(&mut reader, size as usize, debug)?;
 
         Ok(Self{
             streams,
@@ -233,20 +242,11 @@ impl Gpmf {
         })
     }
 
-    /// GPMF from byte slice.
-    // pub fn from_slice(slice: &[u8]) -> Result<Self, GpmfError> {
-    pub fn from_slice(slice: &[u8], debug: bool) -> Result<Self, GpmfError> {
-        let mut cursor = Cursor::new(slice.to_owned());
-        // Self::from_cursor(&mut cursor)
-        Self::from_cursor(&mut cursor, debug)
-    }
-
     /// GPMF from `Cursor<Vec<u8>>`.
-    // pub fn from_cursor(cursor: &mut Cursor<Vec<u8>>) -> Result<Self, GpmfError> {
     pub fn from_cursor(cursor: &mut Cursor<Vec<u8>>, debug: bool) -> Result<Self, GpmfError> {
+        let len = cursor.get_ref().len();
         Ok(Self{
-            // streams: Stream::new(cursor, None)?,
-            streams: Stream::new(cursor, None, debug)?,
+            streams: Stream::new(cursor, len, debug)?,
             source: vec![]
         })
     }
@@ -383,7 +383,7 @@ impl Gpmf {
         // Ok(dur)
         let mut duration = time::Duration::ZERO;
         for path in self.source.iter() {
-            duration += mp4iter::Mp4::new(path)?.duration()?;
+            duration += mp4iter::Mp4::new(path)?.duration(false)?; // no need to reset offset since new file
         }
         Ok(duration)
     }
@@ -475,7 +475,9 @@ impl Gpmf {
         }
     }
 
-    /// For `GPS5` models, Hero10 and earlier.
+    /// For `GPS5` models, Hero10 and earlier. Deprecated from Hero11
+    /// and on. Hero11 logs both `GPS5` and`GPS9`, but any upcoming model
+    /// is expected to only use `GPS9`.
     /// 
     /// Since `GPS5` only logs datetime, GPS fix, and DOP
     /// per point-cluster, a single average point is returned
@@ -497,7 +499,6 @@ impl Gpmf {
     /// which means larger amounts of data.
     // pub fn gps9(&self, set_delta: bool) -> Gps {
     pub fn gps9(&self) -> Gps {
-        // 230323 Added Into<Vec<f64>> for Value::Complex, works so far (10x the points compared to GPS5)
         let gps = Gps(self.filter_iter(&DataType::Gps9)
             .filter_map(|s| GoProPoint::from_gps9(&s))
             .flatten()
@@ -513,20 +514,6 @@ impl Gpmf {
     pub fn sensor(&self, sensor_type: &SensorType) -> Vec<SensorData> {
         SensorData::from_gpmf(self, sensor_type)
     }
-
-    // /// Extract custom data in MP4 `udta` container.
-    // /// GoPro stores some device settings and info here,
-    // /// including a mostly undocumented GPMF-stream.
-    // pub fn meta(&self) -> Result<(), GpmfError> {
-    //     if self.source.iter().any(|p| !match_extension(p, "mp4")) {
-    //         return Err(GpmfError::InvalidFileType{expected_ext: String::from("mp4")})
-    //     }
-    //     for path in self.source.iter() {
-    //         let gpmeta = GoProMeta::new(path)?;
-    //     }
-
-    //     Ok(())
-    // }
 
     // /// Derive starting time, i.e. the absolute timestamp for first `DEVC`.
     // /// Can only be determined if the GPS was turned on and logged data.

@@ -1,7 +1,5 @@
 //! Convenience structure for dealing with relative timestamps.
 
-use std::ops::Deref;
-
 use time::{self, Duration};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd)]
@@ -9,13 +7,8 @@ use time::{self, Duration};
 /// video start and the "duration" (i.e. time until write of next GPMF chunk)
 /// of the DEVC the current stream belongs to. 
 pub struct Timestamp {
-    // /// Duration in milliseconds from video start.
-    // pub relative: u32,
     /// Duration from video start.
     pub relative: Duration,
-    /// Duration in milliseconds for the `DEVC`
-    /// the current stream belongs to.
-    // pub duration: u32,
     /// 'Sample' duration for the `DEVC`,
     /// i.e. time until next `DEVC` is logged.
     pub duration: Duration,
@@ -40,29 +33,17 @@ impl Timestamp {
     /// for the `Stream` it is attached to.
     pub fn new(relative: u32, duration: u32) -> Self {
         Timestamp{
-            // relative,
-            // duration
             relative: Duration::milliseconds(relative as i64),
             duration: Duration::milliseconds(duration as i64),
         }
     }
 
-    // /// Returns `Timestamp.relative` (relative to video start)
-    // /// as `time::Duration`.
-    // pub fn to_relative(&self) -> time::Duration {
-    //     time::Duration::milliseconds(self.relative as i64)
-    // }
     /// Returns `Timestamp.relative` (relative to video start)
     /// as milliseconds.
     pub fn relative_ms(&self) -> i128 {
         self.relative.whole_milliseconds()
     }
     
-    // /// Returns `Timestamp.duration` (duration of current DEVC chunk)
-    // /// as `time::Duration`.
-    // pub fn to_duration(&self) -> time::Duration {
-    //     time::Duration::milliseconds(self.duration as i64)
-    // }
     /// Returns `Timestamp.duration` (duration of current DEVC chunk)
     /// as `time::Duration`.
     pub fn duration_ms(&self) -> i128 {

@@ -1,39 +1,77 @@
-/// Stream type, mostly for internal use.
-/// This will have to be updated if new stream types are added or STNM free text descriptions change.
+//! GPMF data type. These may change as new models are released,
+//! and not all types are available in all cameras.
+
+/// GPMF data type.
+/// This will have to be updated if new data types are added or
+/// future devices change the description given by the `STNM` stream.
+/// 
+/// Model names may be missing and will be updated with new sample data.
+/// Only models that are confirmed for each data type are listed.
 #[derive(Debug, Clone)]
 pub enum DataType {
-    /// Accelerometer
-    Accelerometer,           // Hero 7, 9
-    /// Accelerometer (up/down, right/left, forward/back)
-    AccelerometerUrf,        // Hero 5, 6
-    AgcAudioLevel,           // Hero 9
-    AverageLuminance,        // Hero 7
-    CameraOrientation,       // Hero 9
-    ExposureTime,            // Hero 7, 9
-    FaceCoordinates,         // Hero 7, 9
-    Gps5,                    // Hero 5, 6, 7, 9, 10, 11
-    Gps9,                    // Hero 11
-    GravityVector,           // Hero 9
-    Gyroscope,               // Hero 7, 9
-    GyroscopeZxy,            // Hero 5, 6
-    ImageUniformity,         // Hero 7, 9
-    ImageOrientation,        // Hero 9
-    LrvFrameSkip,            // Hero 9
-    MicrophoneWet,           // Hero 9
-    MrvFrameSkip,            // Hero 9
-    PredominantHue,          // Hero 7
-    SceneClassification,     // Hero 7
-    SensorGain,              // Fusion
-    SensorIso,               // Hero 7, 9
-    SensorReadOutTime,       // Hero 7
-    WhiteBalanceRgbGains,    // Hero 7, 9
-    WhiteBalanceTemperature, // Hero 7, 9
-    WindProcessing,          // Hero 9
+    /// `Accelerometer`.
+    /// Present for Hero 7, 9.
+    Accelerometer,
+    /// `Accelerometer (up/down, right/left, forward/back)`.
+    /// Present for Hero 5, 6.
+    AccelerometerUrf,
+    /// Present for Hero 9.
+    AgcAudioLevel,
+    /// Present for Hero 7.
+    AverageLuminance,
+    /// Present for Hero 9.
+    CameraOrientation,
+    /// `Exposure time (shutter speed)`.
+    /// Present for Hero 5, 6, 7, 9.
+    ExposureTime,
+    /// `Face Coordinates and details`.
+    /// Present for Hero 6, 7, 8, 9.
+    FaceCoordinates,
+    /// `GPS (Lat., Long., Alt., 2D speed, 3D speed)`.
+    /// Present for Hero 5, 6, 7, 8, 9, 10, 11.
+    Gps5,
+    /// Present for Hero 11
+    Gps9,
+    /// `Gravity Vector`.
+    /// Present for Hero 8, 9, 10, 11.
+    GravityVector,
+    /// `Gyroscope`. Present for Hero 7, 8, 9, 10, 11.
+    Gyroscope,
+    /// `Gyroscope (z,x,y)`. Present for Hero 5, 6
+    GyroscopeZxy,
+    /// `Image uniformity`.
+    /// Present for Hero 7, 8, 9.
+    ImageUniformity,
+    /// `ImageOrientation`.
+    /// Present for Hero 9.
+    ImageOrientation,
+    /// Present for Hero 9
+    LrvFrameSkip,
+    /// Present for Hero 9
+    MicrophoneWet,
+    /// Present for Hero 9
+    MrvFrameSkip,
+    /// Present for Hero 7
+    PredominantHue,
+    /// Present for Hero 7
+    SceneClassification,
+    /// Present for Fusion
+    SensorGain,
+    /// Present for Hero 7, 9
+    SensorIso,
+    /// Present for Hero 7
+    SensorReadOutTime,
+    /// Present for Hero 7, 9
+    WhiteBalanceRgbGains,
+    /// Present for Hero 7, 9
+    WhiteBalanceTemperature,
+    /// Present for Hero 9
+    WindProcessing,
     Other(String),
 }
 
 impl DataType {
-    /// Returns stream name (`STNM`) specified in gpmf documentation as a string slice.
+    /// Returns stream name (`STNM`) as specified inside GPMF.
     pub fn to_str(&self) -> &str {
         match self {
             // Confirmed for Hero 7, 8, 9, 11

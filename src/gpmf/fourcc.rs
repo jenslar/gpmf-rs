@@ -3,7 +3,7 @@
 //! `FourCC::Invalid` is there to check for zero padding in MP4 `udta` atom GPMF streams,
 //! which will otherwise erronously be parsed as valid GPMF FourCC.
 
-use std::io::{Cursor, Read};
+use std::io::{Read, BufRead, Seek};
 
 use crate::GpmfError;
 
@@ -11,6 +11,7 @@ use crate::GpmfError;
 #[derive(Debug, Clone, PartialEq)]
 pub enum FourCC {
     // FOURCC RESERVED FOR GPMF STRUCTURE
+
     /// unique device source for metadata
     DEVC,
     /// device/track ID
@@ -168,7 +169,7 @@ pub enum FourCC {
     HMMT,
     /// MP4 `udta` unknown
     BCID,
-    /// MP4 `udta` unknown
+    /// MP4 `udta` global unique media ID
     GUMI,
 
     // JPEG GPMF FourCC
@@ -189,119 +190,108 @@ impl Default for FourCC {
 }
 
 impl FourCC {
-    pub fn new(cursor: &mut Cursor<Vec<u8>>) -> Result<Self, GpmfError> {
-    // pub fn new(cursor: &mut Cursor<&[u8]>) -> Result<Self, GpmfError> {
+    pub fn new<R: Read + BufRead + Seek>(reader: &mut R) -> Result<Self, GpmfError> {
         let mut buf = vec![0_u8; 4];
-        let _len = cursor.read(&mut buf)?;
+        let _len = reader.read(&mut buf)?;
         // if len != buf.len() {
         //     return Err(GpmfError::ReadMismatch{got: len as u64, expected: buf.len() as u64})
         // }
 
-        Self::from_slice(&buf)
-    }
-    pub fn new2(cursor: &[u8]) -> Result<Self, GpmfError> {
-    // pub fn new(cursor: &mut Cursor<&[u8]>) -> Result<Self, GpmfError> {
-        // let mut buf = vec![0_u8; 4];
-        // let len = cursor.read(&mut buf)?;
-        // if len != buf.len() {
-        //     return Err(GpmfError::ReadMismatch{got: len as u64, expected: buf.len() as u64})
-        // }
-
-        Self::from_slice(cursor)
+        Ok(Self::from_slice(&buf))
     }
 
     /// Generate FourCC enum from `&str`.
-    fn from_slice(slice: &[u8]) -> Result<Self, GpmfError> {
-        // assert_eq!(
-        //     slice.len(),
-        //     4,
-        //     "FourCC must be have length 4."
-        // );
+    // fn from_slice(slice: &[u8]) -> Result<Self, GpmfError> {
+    fn from_slice(slice: &[u8]) -> Self {
+        // assert!(slice.len() == 4, "FourCC must be have length 4.");
 
         match slice {
             // GPMF structural FourCC
-            b"DEVC" => Ok(FourCC::DEVC),
-            b"DVID" => Ok(FourCC::DVID),
-            b"DVNM" => Ok(FourCC::DVNM),
-            b"STRM" => Ok(FourCC::STRM),
-            b"STNM" => Ok(FourCC::STNM),
-            b"RMRK" => Ok(FourCC::RMRK),
-            b"SCAL" => Ok(FourCC::SCAL),
-            b"SIUN" => Ok(FourCC::SIUN),
-            b"UNIT" => Ok(FourCC::UNIT),
-            b"TYPE" => Ok(FourCC::TYPE),
-            b"TSMP" => Ok(FourCC::TSMP),
-            b"TIMO" => Ok(FourCC::TIMO),
-            b"EMPT" => Ok(FourCC::EMPT),
+            b"DEVC" => FourCC::DEVC,
+            b"DVID" => FourCC::DVID,
+            b"DVNM" => FourCC::DVNM,
+            b"STRM" => FourCC::STRM,
+            b"STNM" => FourCC::STNM,
+            b"RMRK" => FourCC::RMRK,
+            b"SCAL" => FourCC::SCAL,
+            b"SIUN" => FourCC::SIUN,
+            b"UNIT" => FourCC::UNIT,
+            b"TYPE" => FourCC::TYPE,
+            b"TSMP" => FourCC::TSMP,
+            b"TIMO" => FourCC::TIMO,
+            b"EMPT" => FourCC::EMPT,
 
             // Device/data specific FourCC
-            b"AALP" => Ok(FourCC::AALP),
-            b"ACCL" => Ok(FourCC::ACCL),
-            b"ALLD" => Ok(FourCC::ALLD),
-            b"CORI" => Ok(FourCC::CORI),
-            b"DISP" => Ok(FourCC::DISP),
-            b"FACE" => Ok(FourCC::FACE),
-            b"FCNM" => Ok(FourCC::FCNM),
-            b"GPS5" => Ok(FourCC::GPS5),
-            b"GPS9" => Ok(FourCC::GPS9),
-            b"GPSF" => Ok(FourCC::GPSF),
-            b"GPSP" => Ok(FourCC::GPSP),
-            b"GPSU" => Ok(FourCC::GPSU),
-            b"GPSA" => Ok(FourCC::GPSA),
-            b"GRAV" => Ok(FourCC::GRAV),
-            b"GYRO" => Ok(FourCC::GYRO),
-            b"HUES" => Ok(FourCC::HUES),
-            b"IORI" => Ok(FourCC::IORI),
-            b"ISOE" => Ok(FourCC::ISOE),
-            b"ISOG" => Ok(FourCC::ISOG),
-            b"LSKP" => Ok(FourCC::LSKP),
-            b"MAGN" => Ok(FourCC::MAGN),
-            b"MSKP" => Ok(FourCC::MSKP),
-            b"MWET" => Ok(FourCC::MWET),
-            b"ORIN" => Ok(FourCC::ORIN),
-            b"ORIO" => Ok(FourCC::ORIO),
-            b"MTRX" => Ok(FourCC::MTRX),
-            b"SCEN" => Ok(FourCC::SCEN),
-            b"SHUT" => Ok(FourCC::SHUT),
-            b"SROT" => Ok(FourCC::SROT),
-            b"STMP" => Ok(FourCC::STMP),
-            b"UNIF" => Ok(FourCC::UNIF),
-            b"WBAL" => Ok(FourCC::WBAL),
-            b"WNDM" => Ok(FourCC::WNDM),
-            b"WRGB" => Ok(FourCC::WRGB),
-            b"YAVG" => Ok(FourCC::YAVG),
+            b"AALP" => FourCC::AALP,
+            b"ACCL" => FourCC::ACCL,
+            b"ALLD" => FourCC::ALLD,
+            b"CORI" => FourCC::CORI,
+            b"DISP" => FourCC::DISP,
+            b"FACE" => FourCC::FACE,
+            b"FCNM" => FourCC::FCNM,
+            b"GPS5" => FourCC::GPS5,
+            b"GPS9" => FourCC::GPS9,
+            b"GPSF" => FourCC::GPSF,
+            b"GPSP" => FourCC::GPSP,
+            b"GPSU" => FourCC::GPSU,
+            b"GPSA" => FourCC::GPSA,
+            b"GRAV" => FourCC::GRAV,
+            b"GYRO" => FourCC::GYRO,
+            b"HUES" => FourCC::HUES,
+            b"IORI" => FourCC::IORI,
+            b"ISOE" => FourCC::ISOE,
+            b"ISOG" => FourCC::ISOG,
+            b"LSKP" => FourCC::LSKP,
+            b"MAGN" => FourCC::MAGN,
+            b"MSKP" => FourCC::MSKP,
+            b"MWET" => FourCC::MWET,
+            b"ORIN" => FourCC::ORIN,
+            b"ORIO" => FourCC::ORIO,
+            b"MTRX" => FourCC::MTRX,
+            b"SCEN" => FourCC::SCEN,
+            b"SHUT" => FourCC::SHUT,
+            b"SROT" => FourCC::SROT,
+            b"STMP" => FourCC::STMP,
+            b"UNIF" => FourCC::UNIF,
+            b"WBAL" => FourCC::WBAL,
+            b"WNDM" => FourCC::WNDM,
+            b"WRGB" => FourCC::WRGB,
+            b"YAVG" => FourCC::YAVG,
 
             // Content FourCC
-            b"MSLV" => Ok(FourCC::MSLV),
+            b"MSLV" => FourCC::MSLV,
             // Scene classifications, Hero7 Black only? Not in Hero8+9
-            b"SNOW" => Ok(FourCC::SNOW),
-            b"URBA" => Ok(FourCC::URBA),
-            b"INDO" => Ok(FourCC::INDO),
-            b"WATR" => Ok(FourCC::WATR),
-            b"VEGE" => Ok(FourCC::VEGE),
-            b"BEAC" => Ok(FourCC::BEAC),
+            b"SNOW" => FourCC::SNOW,
+            b"URBA" => FourCC::URBA,
+            b"INDO" => FourCC::INDO,
+            b"WATR" => FourCC::WATR,
+            b"VEGE" => FourCC::VEGE,
+            b"BEAC" => FourCC::BEAC,
 
             // MP4 user data atom (`udta`) only
-            b"FIRM" => Ok(FourCC::FIRM),
-            b"LENS" => Ok(FourCC::LENS),
-            b"CAME" => Ok(FourCC::CAME),
-            b"SETT" => Ok(FourCC::SETT),
-            b"AMBA" => Ok(FourCC::AMBA),
-            b"MUID" => Ok(FourCC::MUID),
-            b"HMMT" => Ok(FourCC::HMMT),
-            b"BCID" => Ok(FourCC::BCID),
-            b"GUMI" => Ok(FourCC::GUMI),
+            b"FIRM" => FourCC::FIRM,
+            b"LENS" => FourCC::LENS,
+            b"CAME" => FourCC::CAME,
+            b"SETT" => FourCC::SETT,
+            b"AMBA" => FourCC::AMBA,
+            b"MUID" => FourCC::MUID,
+            b"HMMT" => FourCC::HMMT,
+            b"BCID" => FourCC::BCID,
+            b"GUMI" => FourCC::GUMI,
 
             // JPEG GPMF FourCC
-            b"MINF" => Ok(FourCC::MINF),
+            b"MINF" => FourCC::MINF,
 
             // GoPro MP4 udta atom contains undocumented
             // GPMF data that is zero padded,
             // used as check for breaking parse loop
-            b"\0" | b"\0\0\0\0" => Ok(Self::Invalid),
+            b"\0" | b"\0\0\0\0" => Self::Invalid,
 
-            // Undocumented FourCC
-            _ => Ok(FourCC::Other(String::from_utf8_lossy(slice).to_string())),
+            // Lossy UTF-8 does not work correctly for single-byte char above 127
+            // (not standard ASCII)
+            // _ => Self::Other(String::from_utf8_lossy(fourcc).to_string()),
+            // Works for ranges 0-255
+            _ => Self::Other(slice.iter().map(|n| *n as char).collect::<String>()),
         }
     }
 

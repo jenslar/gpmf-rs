@@ -1,8 +1,8 @@
 //! Core structure for GPMF raw data values.
 
-use std::io::Cursor;
+use std::io::{BufRead, Seek, Read};
 
-use binread::{BinRead, BinReaderExt, BinResult};
+use binrw::{BinRead, BinReaderExt, BinResult};
 use time::{format_description, PrimitiveDateTime};
 
 use super::Header;
@@ -20,7 +20,7 @@ use crate::{gopro::Dvid, FourCC, GpmfError};
 /// Notes:
 /// - Type `35`/`#` contains "Huffman compression STRM payloads. 4-CC <type><size><rpt> <data ...> is compressed as 4-CC '#'<new size/rpt> <type><size><rpt> <compressed data ...>" (see above GitHub repo).
 /// It is currently parsed into `Vec<u8>`, but no further decoding or processing is implemented.
-/// - Strings except `Value::Utf8()` variant map to ISO8859-1 as a single-byte (0-255) extension of ascii. I.e. `String::from_utf8(Vec<u8>)` would be incorrect or fail for values above 127. See <https://github.com/gopro/gpmf-parser/issues/143#issuecomment-952125684>. `u8 as char` is used as a workaround to produce valid UTF-8 string.
+/// - Strings except `Value::Utf8()` variant map to ISO8859-1 as a single-byte (0-255) extension of ascii. I.e. `String::from_utf8(Vec<u8>)` would be incorrect or fail for values above 127. See <https://github.com/gopro/gpmf-parser/issues/143#issuecomment-952125684>. `u8 as char` is used as a workaround to produce a valid UTF-8 string.
 ///
 /// For the original C source, see:
 /// <https://github.com/gopro/gpmf-parser/blob/420930426c00a2ef3158847f967aed2acb2b06c1/GPMF_common.h>
@@ -99,10 +99,16 @@ impl Value {
     ///
     /// This yields `12 / std::mem::size_of::<u32>() = 3`,
     /// i.e. one array with 3 `u32` values: `[1_u32, 2_u32, 3_u32]`
-    fn read<T: Sized + BinRead>(
-        cursor: &mut Cursor<Vec<u8>>,
+    // fn read<T>(
+    fn read<T, R: Read + BufRead + Seek>(
+        reader: &mut R,
         header: &Header,
-    ) -> BinResult<Vec<T>> {
+    ) -> BinResult<Vec<T>>
+        where
+            // R: BinRead + Read + Seek,
+            T: BinRead,
+            <T as BinRead>::Args<'static>: Sized + Clone + Default
+    {
         // Determine number of values, via type mem size.
         // May miss values or ignore insufficient data error
         // if integer division results in remainder?
@@ -120,20 +126,14 @@ impl Value {
 
         // println!("RANGE {range:?} | RANGE2 {range2:?}");
 
-        range.into_iter().map(|_| cursor.read_be::<T>()).collect()
+        range.into_iter().map(|_| reader.read_be::<T>()).collect()
     }
-
-    // fn type_name(&self) -> &str {
-    //     // std::any::type_name()
-    //     // std::any::type_name_of_val(val)
-
-    //     ""
-    // }
 
     /// Reads and maps ISO8859-1 single-byte values to a UTF-8 string.
     /// Ignores `null` characters.
-    fn from_iso8859_1(cursor: &mut Cursor<Vec<u8>>, header: &Header) -> Result<String, GpmfError> {
-        let bytes = Self::read::<u8>(cursor, header)?;
+    // fn from_iso8859_1(reader: &mut BufReader<File>, header: &Header) -> Result<String, GpmfError> {
+    fn from_iso8859_1<R: Read + BufRead + Seek>(reader: &mut R, header: &Header) -> Result<String, GpmfError> {
+        let bytes = Self::read::<u8, R>(reader, header)?;
         Ok(bytes
             .iter()
             .filter_map(|c| if c != &0 { Some(*c as char) } else { None })
@@ -141,8 +141,10 @@ impl Value {
     }
 
     /// Read and map byte values to a string if these correspond to valid UTF-8.
-    fn from_utf8(cursor: &mut Cursor<Vec<u8>>, header: &Header) -> Result<String, GpmfError> {
-        let bytes = Self::read::<u8>(cursor, header)?;
+    // fn from_utf8(reader: &mut BufReader<File>, header: &Header) -> Result<String, GpmfError> {
+    // fn from_utf8<R: Read + BufRead + Seek>(reader: &mut R, header: &Header) -> Result<String, GpmfError> {
+    fn from_utf8<R: Read + BufRead + Seek>(reader: &mut R, header: &Header) -> Result<String, GpmfError> {
+        let bytes = Self::read::<u8, R>(reader, header)?;
         String::from_utf8(bytes).map_err(|e| e.into())
     }
 
@@ -156,38 +158,43 @@ impl Value {
     /// > The cursor position must always be 32-aligned before
     /// > reading GPMF data into another `Stream`, but NOT
     /// > between reading multiple `Value`s inside the same `Stream`.
-    pub(crate) fn new(
-        cursor: &mut Cursor<Vec<u8>>,
+    // pub(crate) fn new(
+    //     reader: &mut BufReader<File>,
+    //     header: &Header,
+    //     complextype: Option<&str>,
+    // pub(crate) fn new<R: Read + BufRead + Seek>(
+    pub(crate) fn new<R: Read + BufRead + Seek>(
+        reader: &mut R,
         header: &Header,
         complextype: Option<&str>,
     ) -> Result<Self, GpmfError> {
         let values = match header.basetype {
-            b'b' => Self::Sint8(Self::read::<i8>(cursor, header)?),
-            b'B' => Self::Uint8(Self::read::<u8>(cursor, header)?),
-            b's' => Self::Sint16(Self::read::<i16>(cursor, header)?),
-            b'S' => Self::Uint16(Self::read::<u16>(cursor, header)?),
-            b'l' => Self::Sint32(Self::read::<i32>(cursor, header)?),
-            b'L' => Self::Uint32(Self::read::<u32>(cursor, header)?),
-            b'f' => Self::Float32(Self::read::<f32>(cursor, header)?),
-            b'd' => Self::Float64(Self::read::<f64>(cursor, header)?),
-            b'j' => Self::Sint64(Self::read::<i64>(cursor, header)?),
-            b'J' => Self::Uint64(Self::read::<u64>(cursor, header)?),
-            b'q' => Self::Qint32(Self::read::<u32>(cursor, header)?),
-            b'Q' => Self::Qint64(Self::read::<u64>(cursor, header)?),
+            b'b' => Self::Sint8(Self::read::<i8, R>(reader, header)?),
+            b'B' => Self::Uint8(Self::read::<u8, R>(reader, header)?),
+            b's' => Self::Sint16(Self::read::<i16, R>(reader, header)?),
+            b'S' => Self::Uint16(Self::read::<u16, R>(reader, header)?),
+            b'l' => Self::Sint32(Self::read::<i32, R>(reader, header)?),
+            b'L' => Self::Uint32(Self::read::<u32, R>(reader, header)?),
+            b'f' => Self::Float32(Self::read::<f32, R>(reader, header)?),
+            b'd' => Self::Float64(Self::read::<f64, R>(reader, header)?),
+            b'j' => Self::Sint64(Self::read::<i64, R>(reader, header)?),
+            b'J' => Self::Uint64(Self::read::<u64, R>(reader, header)?),
+            b'q' => Self::Qint32(Self::read::<u32, R>(reader, header)?),
+            b'Q' => Self::Qint64(Self::read::<u64, R>(reader, header)?),
             // NOTE: 'String's are defined as ISO8859-1: i.e. single-byte "extended ascii", 0-255,
             // which means `String::from_utf8(Vec<u8>)` fails for values above 127.
             // The actual int/decimal values are the same however so using `u8 as char` works.
-            b'c' => Self::String(Self::from_iso8859_1(cursor, header)?),
+            b'c' => Self::String(Self::from_iso8859_1(reader, header)?),
             // FOURCC has total len 4, assert?
-            b'F' => Self::FourCC(Self::from_iso8859_1(cursor, header)?),
+            b'F' => Self::FourCC(Self::from_iso8859_1(reader, header)?),
             // Explicit UTF8 string so must validate.
-            b'u' => Self::Utf8(Self::from_utf8(cursor, header)?),
+            b'u' => Self::Utf8(Self::from_utf8(reader, header)?),
             // DATETIME has total len 16 (ascii), assert?
-            b'U' => Self::Datetime(Self::from_iso8859_1(cursor, header)?),
+            b'U' => Self::Datetime(Self::from_iso8859_1(reader, header)?),
             // UUID has total len 16, uint8_t, [u8; 16]
-            b'G' => Self::Uuid(Self::read::<u8>(cursor, header)?),
+            b'G' => Self::Uuid(Self::read::<u8, R>(reader, header)?),
             // Huffman compression STRM payloads (just raw data, no decode)
-            b'#' => Self::Compressed(Self::read::<u8>(cursor, header)?),
+            b'#' => Self::Compressed(Self::read::<u8, R>(reader, header)?),
             // Complex basetype, a dynamic, composite basetype that combines other basetypes.
             b'?' => {
                 // Assumed that complex type contains a single ASCII basetype value/char
@@ -206,7 +213,7 @@ impl Value {
                         // Convert header with type `?` to header with specific type.
                         let hdr = header.convert(t);
 
-                        let value = Self::new(cursor, &hdr, None)?;
+                        let value = Self::new(reader, &hdr, None)?;
 
                         complex.push(Box::new(value));
                     }

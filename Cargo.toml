@@ -1,16 +1,20 @@
 [package]
 name = "gpmf-rs"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
+description = "Extract, parse GoPro GPMF data."
+repository = "https://github.com/jenslar/gpmf-rs"
+license = "MIT"
+keywords = ["gopro", "gpmf", "telemetry", "gps", "sensors", "action camera"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-binread = "2.2"
-rayon = "1.5.3"
-time = {version = "0.3", features = ["formatting", "parsing", "macros"]}
+rayon = "1.7.0"
+time = {version = "0.3.23", features = ["formatting", "parsing", "macros"]}
 walkdir = "2.3.2"
 geojson = {version = "0.24", features = ["geo-types"]}
 mp4iter = {git = "https://github.com/jenslar/mp4iter.git"}
 jpegiter = {git = "https://github.com/jenslar/jpegiter.git"}
-blake3 = "1.3.3"
+blake3 = "1.4.1"
+binrw = "0.11.2"

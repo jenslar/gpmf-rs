@@ -14,7 +14,7 @@ pub enum GpmfError {
     /// Failed to locate GoPro offsets in MP4.
     NoMp4Offsets,
     /// Converted `BinResult` error.
-    BinReadError(binread::Error),
+    BinReadError(binrw::Error),
     /// Converted `time::Error` error.
     TimeError(time::Error),
     /// Converted `Utf8Error`.
@@ -66,6 +66,8 @@ pub enum GpmfError {
     UknownDevice,
     /// No data for requested type (e.g. no GPS logged)
     NoData,
+    /// No recording session
+    NoSession,
 }
 
 impl std::error::Error for GpmfError {} // not required?
@@ -100,6 +102,7 @@ impl fmt::Display for GpmfError {
             GpmfError::PathNotSet => write!(f, "Path not set"),
             GpmfError::UknownDevice => write!(f, "Unknown device"),
             GpmfError::NoData => write!(f, "No data for requested type"),
+            GpmfError::NoSession => write!(f, "No session for specified MP4"),
         }
     }
 }
@@ -133,8 +136,8 @@ impl From<mp4iter::errors::Mp4Error> for GpmfError {
     }
 }
 /// Converts binread::Error to FitError
-impl From<binread::Error> for GpmfError {
-    fn from(err: binread::Error) -> GpmfError {
+impl From<binrw::Error> for GpmfError {
+    fn from(err: binrw::Error) -> GpmfError {
         GpmfError::BinReadError(err)
     }
 }

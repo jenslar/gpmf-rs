@@ -64,4 +64,13 @@ impl SensorType {
             _ => Self::Unknown
         }
     }
+    
+    pub fn units(&self) -> &str {
+        match &self {
+            SensorType::Accelerometer => "m/s²",
+            SensorType::GravityVector => "N/A",
+            SensorType::Gyroscope => "rad/s²",
+            SensorType::Unknown => "N/A",
+        }
+    }
 }

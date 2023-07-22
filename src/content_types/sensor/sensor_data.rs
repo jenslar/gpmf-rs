@@ -5,9 +5,9 @@ use crate::{DeviceName, DataType, FourCC, Stream, Gpmf, SensorType};
 use super::{SensorField, Orientation, SensorQuantifier};
 
 /// Sensor data from a single `DEVC` stream:
-/// - Accelerometer, fields are acceleration (m/s2)
-/// - Gyroscope, fields are rotation (rad/s)
-/// - Gravity vector, fields are direction of gravity in relation to the camera
+/// - Accelerometer, fields are acceleration (m/s2).
+/// - Gyroscope, fields are rotation (rad/s).
+/// - Gravity vector, fields are direction of gravity in relation to camera angle.
 #[derive(Debug, Default)]
 pub struct SensorData {
     /// Camera device name
@@ -18,6 +18,8 @@ pub struct SensorData {
     pub units: Option<String>,
     /// Physical quantity
     pub quantifier: SensorQuantifier,
+    /// Total samples delivered so far
+    pub total: u32,
     /// Sensor orientation
     pub orientation: Orientation,
     pub fields: Vec<SensorField>,
@@ -28,6 +30,7 @@ pub struct SensorData {
 }
 
 impl SensorData {
+    /// Parse sensor data from given `Stream`.
     pub fn new(devc_stream: &Stream, sensor: &SensorType, device: &DeviceName) -> Option<Self> {
         // Scale, should only be a single value for Gyro
         let scale = *devc_stream
@@ -50,6 +53,11 @@ impl SensorData {
             Some(orin) => Orientation::from(orin.as_str()),
             None => Orientation::ZXY
         };
+
+        let total: u32 = devc_stream
+            .find(&FourCC::TSMP)
+            .and_then(|s| s.first_value())
+            .and_then(|s| s.into())?;
 
         // Set FourCC for raw data arrays
         let sensor_fourcc = match &sensor {
@@ -75,6 +83,7 @@ impl SensorData {
             sensor: sensor.to_owned(),
             units,
             quantifier:sensor_quantifier,
+            total,
             orientation,
             fields: sensor_fields,
             timestamp: devc_stream.time_relative(),
@@ -93,9 +102,9 @@ impl SensorData {
         if let Some(device) = device_name.first() {
             let data_type = sensor.as_datatype(device);
 
-            let sensor_data = gpmf.filter(&data_type);
+            let sensor_data_streams = gpmf.filter(&data_type);
 
-            return sensor_data.iter()
+            return sensor_data_streams.iter()
                 .filter_map(|stream| Self::new(stream, sensor, device))
                 .collect::<Vec<Self>>()
         }
