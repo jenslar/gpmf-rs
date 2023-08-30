@@ -69,7 +69,7 @@ impl SensorType {
         match &self {
             SensorType::Accelerometer => "m/s²",
             SensorType::GravityVector => "N/A",
-            SensorType::Gyroscope => "rad/s²",
+            SensorType::Gyroscope => "rad/s",
             SensorType::Unknown => "N/A",
         }
     }
