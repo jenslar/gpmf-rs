@@ -73,4 +73,13 @@ impl SensorType {
             SensorType::Unknown => "N/A",
         }
     }
+
+    pub fn quantifier(&self) -> &str {
+        match &self {
+            SensorType::Accelerometer => "Acceleration",
+            SensorType::GravityVector => "N/A",
+            SensorType::Gyroscope => "Rotation",
+            SensorType::Unknown => "N/A",
+        }
+    }
 }
