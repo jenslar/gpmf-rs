@@ -121,15 +121,50 @@ impl SensorData {
         self.fields.len()
     }
 
+    /// Returns all x-axis values.
     pub fn x(&self) -> Vec<f64> {
-        self.fields.iter().map(|sf| sf.x).collect()
+        self.fields.iter().map(|f| f.x).collect()
     }
 
+    /// Returns all y-axis values.
     pub fn y(&self) -> Vec<f64> {
-        self.fields.iter().map(|sf| sf.y).collect()
+        self.fields.iter().map(|f| f.y).collect()
     }
 
+    /// Returns all z-axis values.
     pub fn z(&self) -> Vec<f64> {
-        self.fields.iter().map(|sf| sf.z).collect()
+        self.fields.iter().map(|f| f.z).collect()
+    }
+
+    /// Average of all x values.
+    pub fn avg_x(&self) -> f64 {
+        self.fields.iter().map(|f| f.x).sum::<f64>() / self.fields.len() as f64
+    }
+
+    /// Average of all y values.
+    pub fn avg_y(&self) -> f64 {
+        self.fields.iter().map(|f| f.y).sum::<f64>() / self.fields.len() as f64
+    }
+
+    /// Average of all y values.
+    pub fn avg_z(&self) -> f64 {
+        self.fields.iter().map(|f| f.z).sum::<f64>() / self.fields.len() as f64
+    }
+
+
+    /// Returns all x, y, z values as tuples `(x, y, z)`.
+    pub fn xyz(&self) -> Vec<(f64, f64, f64)> {
+        self.fields.iter()
+            .map(|f| (f.x, f.y, f.z))
+            .collect()
+    }
+
+    /// Returns average of all x, y, z values as tuple `(x, y, z)`.
+    pub fn avg_xyz(&self) -> (f64, f64, f64) {
+        let (x, y, z) = self.fields.iter()
+            .fold((0., 0., 0.), |acc, f| (acc.0 + f.x, acc.1 + f.y, acc.2 + f.z));
+        let len = self.fields.len() as f64;
+
+        (x / len, y / len, z / len)
     }
 }
