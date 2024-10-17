@@ -1,6 +1,6 @@
 //! GoPro device name (`DVNM`).
 
-use std::path::Path;
+use std::{fmt::Display, path::Path};
 
 use crate::GpmfError;
 
@@ -8,8 +8,9 @@ use crate::GpmfError;
 /// Does not yet include all previous models, hence `Other<String>`
 // #[derive(Debug, Clone, Eq, Hash)]
 // #[derive(Debug, Clone, PartialEq, Ord)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub enum DeviceName {
+    #[default]
     Hero5Black,  // DVNM not confirmed
     Hero6Black,  // DVNM not confirmed
     Hero7Black,  // DVNM "Hero7 Black" or "HERO7 Black" (MP4 GoPro MET udta>minf atom)
@@ -17,25 +18,24 @@ pub enum DeviceName {
     Hero9Black,  // DVNM "Hero9 Black" or "HERO9 Black" (MP4 GoPro MET udta>minf atom)
     Hero10Black, // DVNM "Hero10 Black" or "HERO10 Black" (MP4 GoPro MET udta>minf atom)
     Hero11Black, // DVNM "Hero11 Black" or "HERO11 Black" (MP4 GoPro MET udta>minf atom)
+    Hero12Black, // DVNM "Hero12 Black" or "HERO12 Black" (MP4 GoPro MET udta>minf atom)
+    // Hero13Black, // DVNM "Hero12 Black" or "HERO12 Black" (MP4 GoPro MET udta>minf atom)
     Fusion,
     GoProMax,
     GoProKarma,  // DVNM "GoPro Karma v1.0" + whichever device is connected e.g. hero 5.
-    // other identifiers? Silver ranges etc?
-    // Other(String), // for models not yet included as enum
+    Unknown,
 }
 
-impl Default for DeviceName {
-    fn default() -> Self {
-        // Self::Other("Unknown".to_owned())
-        // Use first GPMF hero as default
-        Self::Hero5Black
+impl Display for DeviceName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_str())
     }
 }
 
 impl DeviceName {
     /// Try to determine model from start of `mdat`, which contains
     /// data/fields similar to those in the `udta` atom.
-    /// 
+    ///
     /// `GPRO` should immediately follow the `mdat` header,
     /// then 4 bytes representing size of the section (`u32` Little Endian).
     /// Currently using the start of the firmware string as id (e.g. HD8 = Hero8 Black),
@@ -46,50 +46,43 @@ impl DeviceName {
     }
 
     pub(crate) fn from_file(mp4: &mut mp4iter::Mp4) -> Result<Self, GpmfError> {
-        mp4.reset()?;
-        let udta = mp4.udta(true)?;
-        if let Some(field) = udta.find("FIRM") {
-            if let Some(id) = field.to_string() {
-                match Self::from_firmware_id(&id) {
-                    Some(dvnm) => return Ok(dvnm),
-                    None => return Err(GpmfError::UknownDevice)
-                }
-            }
-        }
-
-        Err(GpmfError::UknownDevice)
+        let mut firm = mp4.find_user_data("FIRM")?;
+        firm.read_to_string().map(|s| Self::from_firmware_id(&s))
+            .map_err(|e| e.into())
     }
 
-    pub fn from_firmware_id(id: &str) -> Option<Self> {
+    pub fn from_firmware_id(id: &str) -> Self {
         match &id[..3] {
-            "HD5" => Some(Self::Hero5Black),
-            "HD6" => Some(Self::Hero6Black),
-            "FS1" => Some(Self::Fusion),
-            "HD7" => Some(Self::Hero7Black),
-            "HD8" => Some(Self::Hero8Black),
-            "HD9" => Some(Self::Hero9Black), // possibly H20
-            "H19" => Some(Self::GoProMax),
-            "H20" => Some(Self::Hero9Black), // possibly HD9, and H20 is another device
-            "H21" => Some(Self::Hero10Black),
-            "H22" => Some(Self::Hero11Black),
-            _ => None
+            "HD5" => Self::Hero5Black,
+            "HD6" => Self::Hero6Black,
+            "FS1" => Self::Fusion,
+            "HD7" => Self::Hero7Black,
+            "HD8" => Self::Hero8Black,
+            "HD9" => Self::Hero9Black, // possibly H20
+            "H19" => Self::GoProMax,
+            "H20" => Self::Hero9Black, // possibly HD9, and H20 is another device
+            "H21" => Self::Hero10Black,
+            "H22" => Self::Hero11Black,
+            "H23" => Self::Hero12Black,
+            _ => Self::Unknown
         }
     }
 
-    pub fn from_str(model: &str) -> Option<Self> {
+    pub fn from_str(model: &str) -> Self {
         match model.trim() {
             // Hero5 Black identifies itself as "Camera" so far.
-            "Camera" | "Hero5 Black" | "HERO5 Black" => Some(Self::Hero5Black),
-            "Hero6 Black" | "HERO6 Black" => Some(Self::Hero6Black),
-            "Hero7 Black" | "HERO7 Black" => Some(Self::Hero7Black),
-            "Hero8 Black" | "HERO8 Black" => Some(Self::Hero8Black),
-            "Hero9 Black" | "HERO9 Black" => Some(Self::Hero9Black),
-            "Hero10 Black" | "HERO10 Black" => Some(Self::Hero10Black),
-            "Hero11 Black" | "HERO11 Black" => Some(Self::Hero11Black),
-            "Fusion" | "FUSION" => Some(Self::Fusion),
-            "GoPro Max" => Some(Self::GoProMax),
-            "GoPro Karma v1.0" => Some(Self::GoProKarma),
-            _ => None
+            "Camera" | "Hero5 Black" | "HERO5 Black" => Self::Hero5Black,
+            "Hero6 Black" | "HERO6 Black" => Self::Hero6Black,
+            "Hero7 Black" | "HERO7 Black" => Self::Hero7Black,
+            "Hero8 Black" | "HERO8 Black" => Self::Hero8Black,
+            "Hero9 Black" | "HERO9 Black" => Self::Hero9Black,
+            "Hero10 Black" | "HERO10 Black" => Self::Hero10Black,
+            "Hero11 Black" | "HERO11 Black" => Self::Hero11Black,
+            "Hero12 Black" | "HERO12 Black" => Self::Hero12Black,
+            "Fusion" | "FUSION" => Self::Fusion,
+            "GoPro Max" => Self::GoProMax,
+            "GoPro Karma v1.0" => Self::GoProKarma,
+            _ => Self::Unknown
         }
     }
 
@@ -102,9 +95,11 @@ impl DeviceName {
             Self::Hero9Black => "Hero9 Black",
             Self::Hero10Black => "Hero10 Black",
             Self::Hero11Black => "Hero11 Black",
+            Self::Hero12Black => "Hero12 Black",
             Self::Fusion => "Fusion",
             Self::GoProMax => "GoPro Max",
             Self::GoProKarma => "GoPro Karma v1.0", // only v1.0 so far
+            Self::Unknown => "Unknown", // only v1.0 so far
         }
     }
 

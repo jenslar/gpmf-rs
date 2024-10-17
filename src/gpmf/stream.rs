@@ -1,4 +1,18 @@
 //! Core data structure for GPMF streams, containing either more streams or raw values.
+//! All data streams in GPMF are represented by a `Stream`, whether e.g. a `DEVC` (nested, top-level container)
+//! or the newer `GPS9` (one of the "terminal" nodes containing the actual values) containing logged GPS data.
+//!
+//! One GoPro MP4 file contains multiple `DEVC` containers, each holding roughly one second of
+//! data for every kind of data the camera logs.
+//! ```
+//! DEVC      (top-level container)
+//!   DVID    (device ID)
+//!   DVN     (device name)
+//!   STRM    (container holding data streams)
+//!     ...
+//!     GPS9  (GPS point cluster in the newer GPS format)
+//!       ... (points)
+//! ```
 
 use std::io::{Seek, SeekFrom, Read, BufRead};
 
@@ -23,7 +37,7 @@ pub struct Stream {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamType {
-    /// Container (Header::basetype = 0). Contains more `Stream`s.
+    /// Container (`Header::basetype` = 0). Contains more `Stream`s.
     Nested(Box<Vec<Stream>>),
     /// Terminal `Stream` nodes. Contain data.
     Values(Vec<Value>),
@@ -34,7 +48,7 @@ impl Stream {
     /// `BufReader` over an MP4-file. Read limit in bytes
     /// must be manually set to represent the size of
     /// the GPMF stream.
-    /// 
+    ///
     /// Some GoPro devices generate more than one stream
     /// for each chunk, hence returning `Vec<Stream>`,
     /// rather than just `Stream`. The discontinued Karma drone
@@ -67,7 +81,7 @@ impl Stream {
             if debug {
                 println!("@{} {header:3?} | LEN: {}", reader.seek(SeekFrom::Current(0))?, header.size(true) + 8); // position is only offset from start of current DEVC, not entire MP4
             }
-            
+
             // `FourCC::Invalid` currently a check for `&[0,0,0,0, ...]`
             // to be able to break loops in GPMF streams that end with 0-padding.
             // So far specific to GPMF streams in MP4 `udta` atoms.
@@ -76,7 +90,7 @@ impl Stream {
             if header.is_invalid() {
                 break
             }
-            
+
             let pad = header.pad;
 
             match header.basetype {
@@ -137,6 +151,14 @@ impl Stream {
     /// Set relative timestamp for GPMF stream.
     pub fn set_time(&mut self, time: &Timestamp) {
         self.time = Some(time.to_owned());
+    }
+
+    /// Set relative timestamp for GPMF stream.
+    pub fn with_time(self, time: &Timestamp) -> Self {
+        Self {
+            time: Some(time.to_owned()),
+            ..self
+        }
     }
 
     /// Returns original size in bytes, before being parsed, for current `Stream`.
@@ -207,9 +229,9 @@ impl Stream {
     /// Convenience method that iterates over numerical values in a terminal stream
     /// (i.e. contains values) and casts these as `Vec<Vec<f64>>`,
     /// where each "inner" `Vec<f64>` represents the values wrapped by a single `Value`.
-    /// 
+    ///
     /// For cases where `Value` is known to wrap multiple values.
-    /// 
+    ///
     /// `None` is returned if the stream is not a terminal node, or if the
     /// `Value` does not wrap numerical data.
     pub fn to_vec_f64(&self) -> Option<Vec<Vec<f64>>> {
@@ -229,9 +251,9 @@ impl Stream {
 
     /// Convenience method that iterates over numerical values in a terminal stream
     /// (i.e. contains values) and casts these as `Vec<f64>`,
-    /// 
+    ///
     /// For cases where `Value` is known to only wrap a single value.
-    /// 
+    ///
     /// `None` is returned if the stream is not a terminal node, or if the
     /// `Value` does not wrap numerical data.
     pub fn to_f64(&self) -> Option<Vec<f64>> {
@@ -301,7 +323,7 @@ impl Stream {
     //     }
     // }
     // pub fn find_all(&self, fourcc: &FourCC, recursive: bool) -> Vec<Self> {
-        
+
     /// Find all stream with specified FourCC. Matches current stream
     /// and direct decendants.
     pub fn find_all(&self, fourcc: &FourCC) -> Vec<Self> {
@@ -372,7 +394,7 @@ impl Stream {
 
     /// Returns duration relative to GPMF start if set.
     /// Should be close to video position.
-    /// 
+    ///
     /// > **Note:** All `Stream`s have timestamps derived from
     /// the original MP4 (at the `DEVC` container level).
     /// The current, official GPMF specification
@@ -384,7 +406,7 @@ impl Stream {
     }
 
     /// Returns duration for current GPMF chunk if set.
-    /// 
+    ///
     /// > **Note:** All `Stream`s have timestamps derived from
     /// the original MP4 (at the `DEVC` container level).
     /// The current, official GPMF specification

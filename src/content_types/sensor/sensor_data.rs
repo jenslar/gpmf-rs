@@ -1,6 +1,6 @@
 use time::Duration;
 
-use crate::{DeviceName, DataType, FourCC, Stream, Gpmf, SensorType};
+use crate::{DataType, DeviceName, FourCC, Gpmf, SensorType, Stream};
 
 use super::{SensorField, Orientation, SensorQuantifier};
 
@@ -48,10 +48,12 @@ impl SensorData {
             .find(&FourCC::SIUN)
             .and_then(|s| s.first_value())
             .and_then(|s| s.into());
-        
+
         let orientation = match orientation_str {
             Some(orin) => Orientation::from(orin.as_str()),
-            None => Orientation::ZXY
+            // None => Orientation::ZXY
+            // Changed to XZY: https://github.com/gopro/gpmf-parser/issues/170#issuecomment-1322414755
+            None => Orientation::XZY
         };
 
         let total: u32 = devc_stream
@@ -69,12 +71,10 @@ impl SensorData {
 
         let sensor_quantifier = SensorQuantifier::from(sensor);
 
-        // Vec containing rotation x, y, z values,
-        // but order needs to be checked
+        // Vec containing x, y, z values
         let sensor_fields = devc_stream.find(&sensor_fourcc)
-            .and_then(|val| val.to_vec_f64())?
+            .and_then(|val| val.to_vec_f64())? // each contained vec should have exactly 3 values for 3D sensor data
             .iter()
-            // .filter_map(|xyz| SensorField::new(&xyz, scale, &orientation, &sensor_field_type))
             .filter_map(|xyz| SensorField::new(&xyz, scale, &orientation))
             .collect::<Vec<_>>();
 
@@ -95,7 +95,10 @@ impl SensorData {
         let device_name: Vec<DeviceName> = gpmf.device_name()
             .iter()
             // .map(|n| DeviceName::from_str(n))
-            .filter_map(|n| DeviceName::from_str(n))
+            .filter_map(|n| match DeviceName::from_str(n) {
+                DeviceName::Unknown => None,
+                name => Some(name)
+            })
             .collect();
         // Get camera device name (listed first if GPMF from Karma drone)
         // to get data type (free text data identifier is model dependent)
@@ -136,35 +139,38 @@ impl SensorData {
         self.fields.iter().map(|f| f.z).collect()
     }
 
-    /// Average of all x values.
-    pub fn avg_x(&self) -> f64 {
-        self.fields.iter().map(|f| f.x).sum::<f64>() / self.fields.len() as f64
-    }
-
-    /// Average of all y values.
-    pub fn avg_y(&self) -> f64 {
-        self.fields.iter().map(|f| f.y).sum::<f64>() / self.fields.len() as f64
-    }
-
-    /// Average of all y values.
-    pub fn avg_z(&self) -> f64 {
-        self.fields.iter().map(|f| f.z).sum::<f64>() / self.fields.len() as f64
-    }
-
-
-    /// Returns all x, y, z values as tuples `(x, y, z)`.
+    /// Returns all x, y, z values as vector of tuples `(x, y, z)`.
     pub fn xyz(&self) -> Vec<(f64, f64, f64)> {
         self.fields.iter()
             .map(|f| (f.x, f.y, f.z))
             .collect()
     }
 
-    /// Returns average of all x, y, z values as tuple `(x, y, z)`.
-    pub fn avg_xyz(&self) -> (f64, f64, f64) {
+    /// Linear average of all x values.
+    pub fn x_avg(&self) -> f64 {
+        linear_average(&self.x())
+    }
+
+    /// Linear average of all x values.
+    pub fn y_avg(&self) -> f64 {
+        linear_average(&self.y())
+    }
+
+    /// Linear average of all x values.
+    pub fn z_avg(&self) -> f64 {
+        linear_average(&self.z())
+    }
+
+    /// Returns linear average of all x, y, z values as tuple `(x, y, z)`.
+    pub fn xyz_avg(&self) -> (f64, f64, f64) {
         let (x, y, z) = self.fields.iter()
             .fold((0., 0., 0.), |acc, f| (acc.0 + f.x, acc.1 + f.y, acc.2 + f.z));
         let len = self.fields.len() as f64;
 
         (x / len, y / len, z / len)
     }
+}
+
+fn linear_average(values: &[f64]) -> f64 {
+    values.iter().sum::<f64>() / values.len() as f64
 }

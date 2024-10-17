@@ -1,6 +1,6 @@
 //! Core structure for GPMF raw data values.
 
-use std::io::{BufRead, Seek, Read};
+use std::{default, io::{BufRead, Read, Seek}};
 
 use binrw::{BinRead, BinReaderExt, BinResult};
 use time::{format_description, PrimitiveDateTime};
@@ -24,7 +24,7 @@ use crate::{gopro::Dvid, FourCC, GpmfError};
 ///
 /// For the original C source, see:
 /// <https://github.com/gopro/gpmf-parser/blob/420930426c00a2ef3158847f967aed2acb2b06c1/GPMF_common.h>
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Value {
     /// Ascii: c/99, single byte 'c' style ASCII character string, char.
     /// Optionally NULL terminated. Size/repeat sets the length.
@@ -83,6 +83,7 @@ pub enum Value {
     Compressed(Vec<u8>),
     /// 0/null, Nested metadata/container, e.g. DEVC, STRM.
     Nested,
+    #[default]
     /// Empty message, e.g. when repeats or basesize is 0
     Empty,
     /// For erratic/corrupted data values that could not be read

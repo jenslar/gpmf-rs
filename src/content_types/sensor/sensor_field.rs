@@ -10,7 +10,7 @@ use super::Orientation;
 /// - Accelerometer (acceleration, m/s2)
 /// - Gyroscrope (rotation, rad/s)
 /// - Gravity vector (direction of gravity)
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct SensorField {
     pub x: f64,
     pub y: f64,

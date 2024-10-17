@@ -44,7 +44,7 @@ impl Header {
     ///     - 4: Type (u8)
     ///     - 5: Structure size (u8 in spec, but stored as u16)
     ///     - 6-7: Repeat (u16)
-    /// 
+    ///
     /// GPMF strings (e.g. STNM):
     /// Between older and newer GoPro devices, strings are
     /// sometimes structure size = 1, repeat X, somtimes size = X, repeat 1.

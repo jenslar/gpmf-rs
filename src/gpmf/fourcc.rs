@@ -5,6 +5,8 @@
 
 use std::io::{Read, BufRead, Seek};
 
+use binrw::BinRead;
+
 use crate::GpmfError;
 
 /// FourCC enum. Descriptions lifted from official GPMF documentation (<https://github.com/gopro/gpmf-parser>)
@@ -70,7 +72,7 @@ pub enum FourCC {
     /// HERO5Black - Hero10Black (logged, but deprecated for Hero11)
     /// 18Hz
     /// latitude, longitude, altitude (WGS 84), 2D ground speed, and 3D speed
-    /// deg, deg, m, m/s, m/s   
+    /// deg, deg, m, m/s, m/s
     GPS5,
     /// Hero11 Black and later
     /// lat, long, alt (WGS 84), 2D speed, 3D speed, days, seconds, DOP, fix
@@ -125,7 +127,7 @@ pub enum FourCC {
     SROT,
     /// Fusion and later (?)  microsecond timestamps  1   µs  Increased precision for post stablization
     STMP,
-    /// HERO7Black  Image uniformity    8 - 10  range 0 to 1.0 where 1.0 is a solid color   
+    /// HERO7Black  Image uniformity    8 - 10  range 0 to 1.0 where 1.0 is a solid color
     UNIF,
     /// HERO6Black  White Balance in Kelvin 24, 25 or 30 (based video frame rate)   n/a Classic white balance info
     WBAL,
@@ -178,7 +180,7 @@ pub enum FourCC {
     /// Mainly for checking and invalidating 0-padding
     /// in MP4 `udta` GPMF data.
     Invalid,
-    
+
     /// Undocumented FourCC, such as for those found in GoPro MP4 `udta` atom's GPMF section
     Other(String),
 }
@@ -189,21 +191,30 @@ impl Default for FourCC {
     }
 }
 
+// impl BinRead for FourCC {
+//     type Args<'a>;
+
+//     fn read_options<R: Read + Seek>(
+//         reader: &mut R,
+//         endian: binrw::Endian,
+//         args: Self::Args<'_>,
+//     ) -> binrw::BinResult<Self> {
+//         let mut buf: [u8; 4] = [0; 4];
+//         reader.read::<[u8; 4]>(buf)?;
+//         Ok(Self::from_arr(buf))
+//     }
+// }
+
 impl FourCC {
     pub fn new<R: Read + BufRead + Seek>(reader: &mut R) -> Result<Self, GpmfError> {
         let mut buf = vec![0_u8; 4];
-        let _len = reader.read(&mut buf)?;
-        // if len != buf.len() {
-        //     return Err(GpmfError::ReadMismatch{got: len as u64, expected: buf.len() as u64})
-        // }
-
+        let _len = reader.read_exact(&mut buf)?;
         Ok(Self::from_slice(&buf))
     }
 
     /// Generate FourCC enum from `&str`.
     // fn from_slice(slice: &[u8]) -> Result<Self, GpmfError> {
     fn from_slice(slice: &[u8]) -> Self {
-        // assert!(slice.len() == 4, "FourCC must be have length 4.");
 
         match slice {
             // GPMF structural FourCC
@@ -293,6 +304,101 @@ impl FourCC {
             // Works for ranges 0-255
             _ => Self::Other(slice.iter().map(|n| *n as char).collect::<String>()),
         }
+    }
+    fn from_arr(arr: [u8; 4]) -> Self {
+        // assert!(slice.len() == 4, "FourCC must be have length 4.");
+
+        Self::from_slice(&arr)
+
+        // match &slice {
+        //     // GPMF structural FourCC
+        //     b"DEVC" => FourCC::DEVC,
+        //     b"DVID" => FourCC::DVID,
+        //     b"DVNM" => FourCC::DVNM,
+        //     b"STRM" => FourCC::STRM,
+        //     b"STNM" => FourCC::STNM,
+        //     b"RMRK" => FourCC::RMRK,
+        //     b"SCAL" => FourCC::SCAL,
+        //     b"SIUN" => FourCC::SIUN,
+        //     b"UNIT" => FourCC::UNIT,
+        //     b"TYPE" => FourCC::TYPE,
+        //     b"TSMP" => FourCC::TSMP,
+        //     b"TIMO" => FourCC::TIMO,
+        //     b"EMPT" => FourCC::EMPT,
+
+        //     // Device/data specific FourCC
+        //     b"AALP" => FourCC::AALP,
+        //     b"ACCL" => FourCC::ACCL,
+        //     b"ALLD" => FourCC::ALLD,
+        //     b"CORI" => FourCC::CORI,
+        //     b"DISP" => FourCC::DISP,
+        //     b"FACE" => FourCC::FACE,
+        //     b"FCNM" => FourCC::FCNM,
+        //     b"GPS5" => FourCC::GPS5,
+        //     b"GPS9" => FourCC::GPS9,
+        //     b"GPSF" => FourCC::GPSF,
+        //     b"GPSP" => FourCC::GPSP,
+        //     b"GPSU" => FourCC::GPSU,
+        //     b"GPSA" => FourCC::GPSA,
+        //     b"GRAV" => FourCC::GRAV,
+        //     b"GYRO" => FourCC::GYRO,
+        //     b"HUES" => FourCC::HUES,
+        //     b"IORI" => FourCC::IORI,
+        //     b"ISOE" => FourCC::ISOE,
+        //     b"ISOG" => FourCC::ISOG,
+        //     b"LSKP" => FourCC::LSKP,
+        //     b"MAGN" => FourCC::MAGN,
+        //     b"MSKP" => FourCC::MSKP,
+        //     b"MWET" => FourCC::MWET,
+        //     b"ORIN" => FourCC::ORIN,
+        //     b"ORIO" => FourCC::ORIO,
+        //     b"MTRX" => FourCC::MTRX,
+        //     b"SCEN" => FourCC::SCEN,
+        //     b"SHUT" => FourCC::SHUT,
+        //     b"SROT" => FourCC::SROT,
+        //     b"STMP" => FourCC::STMP,
+        //     b"UNIF" => FourCC::UNIF,
+        //     b"WBAL" => FourCC::WBAL,
+        //     b"WNDM" => FourCC::WNDM,
+        //     b"WRGB" => FourCC::WRGB,
+        //     b"YAVG" => FourCC::YAVG,
+
+        //     // Content FourCC
+        //     b"MSLV" => FourCC::MSLV,
+        //     // Scene classifications, Hero7 Black only? Not in Hero8+9
+        //     b"SNOW" => FourCC::SNOW,
+        //     b"URBA" => FourCC::URBA,
+        //     b"INDO" => FourCC::INDO,
+        //     b"WATR" => FourCC::WATR,
+        //     b"VEGE" => FourCC::VEGE,
+        //     b"BEAC" => FourCC::BEAC,
+
+        //     // MP4 user data atom (`udta`) only
+        //     b"FIRM" => FourCC::FIRM,
+        //     b"LENS" => FourCC::LENS,
+        //     b"CAME" => FourCC::CAME,
+        //     b"SETT" => FourCC::SETT,
+        //     b"AMBA" => FourCC::AMBA,
+        //     b"MUID" => FourCC::MUID,
+        //     b"HMMT" => FourCC::HMMT,
+        //     b"BCID" => FourCC::BCID,
+        //     b"GUMI" => FourCC::GUMI,
+
+        //     // JPEG GPMF FourCC
+        //     b"MINF" => FourCC::MINF,
+
+        //     // GoPro MP4 udta atom contains undocumented
+        //     // GPMF data that is zero padded,
+        //     // used as check for breaking parse loop
+        //     // b"\0" | b"\0\0\0\0" => Self::Invalid,
+        //     b"\0\0\0\0" => Self::Invalid,
+
+        //     // Lossy UTF-8 does not work correctly for single-byte char above 127
+        //     // (not standard ASCII)
+        //     // _ => Self::Other(String::from_utf8_lossy(fourcc).to_string()),
+        //     // Works for ranges 0-255
+        //     _ => Self::Other(slice.iter().map(|n| *n as char).collect::<String>()),
+        // }
     }
 
     /// Generate FourCC enum from `&str`.

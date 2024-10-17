@@ -11,6 +11,21 @@ pub enum Dvid {
     FourCC(FourCC),
 }
 
+impl Default for Dvid {
+    fn default() -> Self {
+        Self::FourCC(FourCC::Invalid)
+    }
+}
+
+impl std::fmt::Display for Dvid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Dvid::Uint32(num) => write!(f, "{num}"),
+            Dvid::FourCC(fourcc) => write!(f, "{}", fourcc.to_str()),
+        }
+    }
+}
+
 impl Into<Option<u32>> for &Dvid {
     fn into(self) -> Option<u32> {
         match self {

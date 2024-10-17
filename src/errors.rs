@@ -12,7 +12,8 @@ pub enum GpmfError {
     /// Error parsing JPEG.
     JpegError(jpegiter::JpegError),
     /// Failed to locate GoPro offsets in MP4.
-    NoMp4Offsets,
+    // NoMp4Offsets(mp4iter::FourCC),
+    NoMp4Offsets(String),
     /// Converted `BinResult` error.
     BinReadError(binrw::Error),
     /// Converted `time::Error` error.
@@ -61,6 +62,13 @@ pub enum GpmfError {
     InvalidGoProFileType(GoProFileType),
     /// Missing path (e.g. no path set for `GoProFile`)
     PathNotSet,
+    /// Missing high-res video path (e.g. no MP4 set for `GoProFile`)
+    HighResVideoNotSet,
+    /// Missing low-res video path (e.g. no LRV set for `GoProFile`)
+    LowResVideoNotSet,
+    /// Error if attempting to merge two GoPro files
+    /// with different fingerprints.
+    FingerprintMismatch,
     /// Model or camera not known,
     /// mostly for generic MP4 files with no identifiers.
     UknownDevice,
@@ -68,6 +76,8 @@ pub enum GpmfError {
     NoData,
     /// No recording session
     NoSession,
+    /// Failed to determine path of parent dir.
+    NoParentDir
 }
 
 impl std::error::Error for GpmfError {} // not required?
@@ -77,7 +87,8 @@ impl fmt::Display for GpmfError {
         match self {
             GpmfError::Mp4Error(err) => write!(f, "{err}"),
             GpmfError::JpegError(err) => write!(f, "{err}"),
-            GpmfError::NoMp4Offsets => write!(f, "Failed to locate GoPro GPMF offsets in MP4."),
+            // GpmfError::NoMp4Offsets => write!(f, "Failed to locate GoPro GPMF offsets in MP4."),
+            GpmfError::NoMp4Offsets(name) => write!(f, "Failed to locate GoPro GPMF offsets in MP4 for handler with name '{name}'."),
             GpmfError::BinReadError(err) => write!(f, "{err}"),
             GpmfError::TimeError(err) => write!(f, "{err}"),
             GpmfError::Utf8Error(err) => write!(f, "{err}"),
@@ -100,9 +111,13 @@ impl fmt::Display for GpmfError {
             GpmfError::InvalidGoProFileType(filetype) => write!(f, "Can not use {filetype:?} for this action"),
             GpmfError::InvalidFileType(path) => write!(f, "Invalid file type: '{}'", path.display()),
             GpmfError::PathNotSet => write!(f, "Path not set"),
+            GpmfError::HighResVideoNotSet => write!(f, "Path for high-resolution clip not set"),
+            GpmfError::LowResVideoNotSet => write!(f, "Path for low-resolution clip not set"),
+            GpmfError::FingerprintMismatch => write!(f, "GoProFile merge failed: fingerprint mismatch."),
             GpmfError::UknownDevice => write!(f, "Unknown device"),
             GpmfError::NoData => write!(f, "No data for requested type"),
             GpmfError::NoSession => write!(f, "No session for specified MP4"),
+            GpmfError::NoParentDir => write!(f, "Failed to determine path of parent dir."),
         }
     }
 }

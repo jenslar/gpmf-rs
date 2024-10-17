@@ -1,4 +1,4 @@
-use time::PrimitiveDateTime;
+use time::{Duration, PrimitiveDateTime};
 use crate::content_types::primitivedatetime_to_string;
 
 use super::GoProPoint;
@@ -10,6 +10,10 @@ pub struct Gps(pub Vec<GoProPoint>);
 impl Gps {
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &GoProPoint> {
@@ -30,6 +34,11 @@ impl Gps {
 
     pub fn last(&self) -> Option<&GoProPoint> {
         self.0.last()
+    }
+
+    /// Returns center of GPS points cluster.
+    pub fn center(&self) -> GoProPoint{
+        points_average(&self.0)
     }
 
     // pub fn first_timestamp(&self) -> Option<&Timestamp> {
@@ -88,12 +97,17 @@ impl Gps {
     /// For Hero11 an later (`GPS9` devices) DOP is logged in `GPS9`.
     /// A value value below 500 is good
     /// according to <https://github.com/gopro/gpmf-parser>.
-    pub fn prune(self, min_gps_fix: u32, _min_dop: Option<f64>) -> Self {
+    pub fn prune(self, min_gps_fix: u32, max_dop: Option<f64>) -> Self {
         // GoPro has four levels: 0, 2, 3 (No lock, 2D lock, 3D lock)
         Self(
             self.0
                 .into_iter()
-                .filter(|p| p.fix >= min_gps_fix)
+                .filter(|p| match max_dop {
+                    Some(dop) => {
+                        (p.dop < dop) && (p.fix >= min_gps_fix)
+                    }
+                    None => p.fix >= min_gps_fix
+                })
                 .collect::<Vec<_>>(),
         )
     }
@@ -109,12 +123,12 @@ impl Gps {
     /// `min_gps_fix` corresponds to satellite lock and should be
     /// at least 2 to ensure returned points have logged a position
     /// that is in the vicinity of the camera.
-    /// 
+    ///
     /// Valid values are:
     /// - 0 (no lock)
     /// - 2 (2D lock)
     /// - 3 (3D lock)
-    /// 
+    ///
     /// On Hero 10 and earlier (devices that use `GPS5`) this is logged
     /// in `GPSF`. Hero11 and later deprecate `GPS5` the value in GPS9
     /// should be used instead.
@@ -124,10 +138,95 @@ impl Gps {
     /// For Hero11 an later (`GPS9` devices) DOP is logged in `GPS9`.
     /// A value below 500 is good
     /// according to <https://github.com/gopro/gpmf-parser>.
-    pub fn prune_mut(&mut self, min_gps_fix: u32, _min_dop: Option<f64>) -> usize {
+    pub fn prune_mut(&mut self, min_gps_fix: u32, max_dop: Option<f64>) -> usize {
         let len1 = self.len();
-        self.0.retain(|p| p.fix >= min_gps_fix);
+        self.0.retain(|p| match max_dop {
+            Some(dop) => {
+                (p.dop < dop) && (p.fix >= min_gps_fix)
+            }
+            None => p.fix >= min_gps_fix
+        });
         let len2 = self.len();
         return len1 - len2;
     }
+}
+
+/// Returns a latitude dependent average for specified points.
+///
+/// Timestamps are currently not averaged,
+/// instead first timestamp in cluster is used.
+pub(crate) fn points_average(points: &[GoProPoint]) -> GoProPoint {
+    // see: https://carto.com/blog/center-of-points/ NO LONGER UP
+    // atan2(y,x) where y = sum((sin(yi)+...+sin(yn))/n), x = sum((cos(xi)+...cos(xn))/n), y, i in radians
+
+    let dur_total: Duration = points.iter().map(|p| p.time).sum();
+
+    let deg2rad = std::f64::consts::PI / 180.0; // inverse for radians to degress
+
+    let mut lon_rad_sin: Vec<f64> = Vec::new(); // sin values
+    let mut lon_rad_cos: Vec<f64> = Vec::new(); // cos values
+    let mut lat_rad: Vec<f64> = Vec::new(); // arithmetic average ok
+    let mut alt: Vec<f64> = Vec::new(); // arithmetic average ok
+    let mut sp2d: Vec<f64> = Vec::new(); // arithmetic average ok
+    let mut sp3d: Vec<f64> = Vec::new(); // arithmetic average ok
+    let mut dop: Vec<f64> = Vec::new();
+    let mut fix: Vec<f64> = Vec::new();
+
+    for pt in points.iter() {
+        lon_rad_sin.push((pt.longitude * deg2rad).sin()); // get the sin values immediately
+        lon_rad_cos.push((pt.longitude * deg2rad).cos()); // get the cos values immediately
+        lat_rad.push(pt.latitude * deg2rad); // arithmetic avg ok, only converts to radians
+        alt.push(pt.altitude);
+        // magnetometer is MAX cameras only
+        // if let Some(h) = pt.heading {
+        //     hdg.push(h)
+        // }
+        sp2d.push(pt.speed2d);
+        sp3d.push(pt.speed3d);
+        dop.push(pt.dop);
+        fix.push(pt.fix as f64);
+    }
+
+    // AVERAGING LATITUDE DEPENDANT LONGITUDES
+    let lon_rad_sin_sum = average(&lon_rad_sin);
+    let lon_rad_cos_sum = average(&lon_rad_cos);
+    let lon_avg_deg = f64::atan2(lon_rad_sin_sum, lon_rad_cos_sum) / deg2rad; // -> degrees
+    let lat_avg_deg = average(&lat_rad) / deg2rad; // -> degrees
+    let alt_avg = average(&alt);
+    // magnetometer is MAX cameras only
+    // let hdg_avg = match hdg.is_empty() {
+    //     true => None,
+    //     false => Some(average(&hdg)),
+    // };
+    let sp2d_avg = average(&sp2d);
+    let sp3d_avg = average(&sp3d);
+    let dop_avg = average(&dop);
+    let fix_avg = average(&fix);
+
+    GoProPoint {
+        latitude: lat_avg_deg,
+        longitude: lon_avg_deg,
+        altitude: alt_avg,
+        // heading: hdg_avg,
+        speed2d: sp2d_avg,
+        speed3d: sp3d_avg,
+        // Use datetime for first point in cluster to represent the start
+        // of the timestamp for averaged points. (rather than average datetime)
+        datetime: points.first().map(|p| p.datetime).expect("No points logged"),
+        // timestamp: should be start of first point not average,
+        // so that timestamp + duration = timespan within which all averaged points were logged
+        // timestamp: ts_first, // TODO test! hero11 then virb (remove set_timedelta for virb)
+        // timestamp: Some(time_avg), // OLD
+        // duration: should be sum of all durations
+        // so that timestamp + duration = timespan within which all averaged points were logged
+        time: dur_total, // TODO test! hero11 then virb (remove set_timedelta for virb)
+        // duration: points.first().and_then(|p| p.duration), // OLD
+        // description,
+        dop: dop_avg,
+        fix: fix_avg as u32 // meaningless but eh...
+    }
+}
+
+fn average(nums: &[f64]) -> f64 {
+    nums.iter().sum::<f64>() / nums.len() as f64
 }

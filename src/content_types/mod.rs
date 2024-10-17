@@ -9,9 +9,6 @@ pub mod gps;
 pub mod sensor;
 
 pub use data_types::DataType;
-// pub use sensor::{Acceleration, Accelerometer};
-// pub use sensor::{Orientation, Rotation, Gyroscope};
-pub use sensor::{SensorData, SensorType};
 pub use gps::{GoProPoint, Gps};
 
 /// String representation for datetime objects.

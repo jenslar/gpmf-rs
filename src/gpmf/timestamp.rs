@@ -5,9 +5,9 @@ use time::{self, Duration};
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd)]
 /// Timestamp containing relative time in milliseconds from
 /// video start and the "duration" (i.e. time until write of next GPMF chunk)
-/// of the DEVC the current stream belongs to. 
+/// of the DEVC the current stream belongs to.
 pub struct Timestamp {
-    /// Duration from video start.
+    /// Time passed since video start.
     pub relative: Duration,
     /// 'Sample' duration for the `DEVC`,
     /// i.e. time until next `DEVC` is logged.
@@ -23,6 +23,15 @@ impl Ord for Timestamp {
             return std::cmp::Ordering::Less
         }
         std::cmp::Ordering::Equal
+    }
+}
+
+impl From<(Duration, Duration)> for Timestamp {
+    fn from(value: (Duration, Duration)) -> Self {
+        Self {
+            relative: value.0,
+            duration: value.1,
+        }
     }
 }
 
@@ -43,28 +52,40 @@ impl Timestamp {
     pub fn relative_ms(&self) -> i128 {
         self.relative.whole_milliseconds()
     }
-    
+
     /// Returns `Timestamp.duration` (duration of current DEVC chunk)
     /// as `time::Duration`.
     pub fn duration_ms(&self) -> i128 {
         self.duration.whole_milliseconds()
     }
-    
-    /// Adds one `Timestamp` to another and returns the resulting `Timestamp`.
+
+    /// Adds one stream `Timestamp` to another
+    /// and returns the resulting `Timestamp`.
     /// Only modifies the `relative` field.
-    pub fn add(&self, timestamp: &Self) -> Self {
+    ///
+    /// Order is unfortunately critical: `other`'s value is used to
+    /// extend `self`, not the other way around.
+    /// This is due to `other`'s sample duration (derived from MP4 timing
+    /// via the `stts` atom) being involved.
+    /// For other MP4 tracks sample durations
+    /// may vary throughout the track. This is so far not the case
+    /// for the GPMF track (`GoPro MET`).
+    pub fn add(&self, other: &Self) -> Self {
         Self {
-            relative: self.relative + timestamp.relative,
+            // relative: self.relative + other.relative,
+            relative: self.relative + other.relative + other.duration, // need duration as well
             ..self.to_owned()
         }
     }
 
-    /// Substracts one `Timestamp` from another and returns the resulting `Timestamp`.
-    /// Only modifies the `relative` field.
-    pub fn sub(&self, timestamp: &Self) -> Self {
-        Self {
-            relative: self.relative - timestamp.relative,
-            ..self.to_owned()
-        }
-    }
+    // Removed subtraction since it's not clear in what situation this is needed or how it should be implemented
+    // /// Substracts one `Timestamp` from another and returns the resulting `Timestamp`.
+    // /// Only modifies the `relative` field.
+    // pub fn sub(&self, timestamp: &Self) -> Self {
+    //     Self {
+    //         // relative: self.relative - timestamp.relative,
+    //         relative: self.relative - timestamp.relative - timestamp.duration, // doesnt make sense
+    //         ..self.to_owned()
+    //     }
+    // }
 }

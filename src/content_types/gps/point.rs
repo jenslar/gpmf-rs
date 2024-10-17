@@ -150,6 +150,14 @@ impl GoProPoint {
         }
     }
 
+    pub fn with_lat_lon(self, latitude: f64, longitude: f64) -> Self {
+        Self {
+            latitude,
+            longitude,
+            ..self
+        }
+    }
+
     /// For Hero10 and earlier models. These log at 18Hz.
     /// Returns a linear average of the point cluster in the specified DEVC stream.
     /// GPS5 devices log datetime, GPS fix, GPS dop once for the whole cluster.

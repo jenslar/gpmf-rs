@@ -2,11 +2,12 @@
 //! to one recording session chronologically.
 
 use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
+    collections::{HashMap, HashSet}, hash::{DefaultHasher, Hash, Hasher}, path::{Path, PathBuf}
 };
 
-use time::Duration;
+use indicatif::{ParallelProgressIterator, ProgressBar};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use time::{Duration, PrimitiveDateTime};
 use walkdir::WalkDir;
 
 use crate::{files::has_extension, DeviceName, Gpmf, GpmfError};
@@ -15,6 +16,16 @@ use super::{GoProFile, GoProMeta};
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct GoProSession(Vec<GoProFile>);
+
+impl Hash for GoProSession {
+    /// A combined hash of the fingerprints for each, respective
+    /// `GoProFile` in this session.
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.iter().map(|f| f.fingerprint.to_owned())
+            .collect::<Vec<_>>()
+            .hash(state);
+    }
+}
 
 impl GoProSession {
     /// Number of clips in session.
@@ -25,6 +36,15 @@ impl GoProSession {
     /// Returns `true` if session contains no clips.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Returns a fingerprint/ID for the `GoProSession`,
+    /// consiting of hashed fingerprint of the individual
+    /// `GoProFile`s.
+    pub fn fingerprint(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish()
     }
 
     /// Add `GoProFile` last to session.
@@ -90,6 +110,21 @@ impl GoProSession {
         self.first().map(|gp| &gp.device)
     }
 
+    /// Returns device serial number for camera used.
+    /// (extracted from `CAME` in `udta` atom).
+    /// Panics if more than one unique serial is found.
+    pub fn serial(&self) -> Vec<u8> {
+        let serials: HashSet<Vec<u8>> = self.iter()
+                .filter_map(|gp| {
+                    gp.serial().ok()
+                })
+                .collect();
+
+        assert!(serials.len() == 1, "Found multiple camera serial numbers in single session");
+
+        serials.iter().nth(0).unwrap().to_owned()
+    }
+
     /// Create a session from a single clip.
     pub fn single(path: &Path) -> Result<Self, GpmfError> {
         Ok(Self(vec![GoProFile::new(path)?]))
@@ -113,14 +148,34 @@ impl GoProSession {
         self.0.iter().filter_map(|gp| gp.meta().ok()).collect()
     }
 
-    /// Returns paths to high-resolution MP4-clips if set (`.MP4`).
-    pub fn mp4(&self) -> Vec<PathBuf> {
-        self.iter().filter_map(|f| f.mp4.to_owned()).collect()
+    /// Returs all paths to either high-resolution clips,
+    /// or low-resolution clips in session, whichever is set,
+    /// priotritising high-resolution, skipping
+    /// `GoProFile`s that have no path set.
+    pub fn paths(&self) -> Vec<PathBuf> {
+        self
+            .iter()
+            .filter_map(|f| f.path().ok())
+            .map(|p| p.to_owned())
+            .collect()
     }
 
-    /// Returns paths to low-resolution MP4-clips if set (`.LRV`).
+    /// Returns paths to high-resolution MP4-clips if set (`.MP4`),
+    /// skipping `GoProFile`s that have no path set.
+    pub fn mp4(&self) -> Vec<PathBuf> {
+        self
+            .iter()
+            .filter_map(|f| f.mp4.to_owned())
+            .collect()
+    }
+
+    /// Returns paths to low-resolution MP4-clips if set (`.LRV`),
+    /// skipping `GoProFile`s that have no path set.
     pub fn lrv(&self) -> Vec<PathBuf> {
-        self.iter().filter_map(|f| f.lrv.to_owned()).collect()
+        self
+            .iter()
+            .filter_map(|f| f.lrv.to_owned())
+            .collect()
     }
 
     /// Returns `true` if paths are set for all high-resolution clips in session.
@@ -138,11 +193,16 @@ impl GoProSession {
     }
 
     /// Sort clips chronologically by `GoProFile::time_first_frame`.
-    /// 
+    ///
     /// This is so far the only timestamp that is
     /// progressive across clips in the same session.
+    /// MP4 creation time in `mvhd` atom will have the same
+    /// date logged for all GoPro clips belonging to the same
+    /// recordig session.
     pub fn sort(&mut self) {
         self.0.sort_by_key(|k| k.time_first_frame)
+        // sorts by MP4 creation time which will be the same for some gopro devices
+        // self.0.sort_by_key(|k| k.start())
     }
 
     /// Sort GoPro clips in session based on filename.
@@ -174,17 +234,37 @@ impl GoProSession {
         video: &Path,
         dir: Option<&Path>,
         verify_gpmf: bool,
-        // no_gps: bool,
         verbose: bool,
-    ) -> Option<Self> {
+        continue_on_error: bool
+    ) -> Result<Self, GpmfError> {
         let indir = match dir {
             Some(d) => d,
-            None => video.parent()?,
+            None => video.parent().ok_or(GpmfError::NoParentDir)?,
         };
 
-        let sessions = Self::sessions_from_path(indir, Some(video), verify_gpmf, verbose);
+        Self::sessions_from_path(indir, Some(video), verify_gpmf, verbose, continue_on_error)?
+            .first()
+            .cloned()
+            .ok_or(GpmfError::NoSession)
+    }
 
-        sessions.first().cloned()
+    /// Determines recording session from `GoProFile`. If `dir` is `None`,
+    /// the parent dir of clips/s in `GoProFile` will be used.
+    pub fn from_goprofile(
+        gopro: &GoProFile,
+        dir: Option<&Path>,
+        verify_gpmf: bool,
+        continue_on_error: bool
+    ) -> Result<Self, GpmfError> {
+        let indir = match dir {
+            Some(d) => d,
+            None => gopro.path()?.parent().ok_or(GpmfError::NoParentDir)?,
+        };
+
+        Self::sessions_from_path(indir, Some(gopro.path()?), verify_gpmf, false, continue_on_error)?
+            .first()
+            .cloned()
+            .ok_or(GpmfError::NoSession)
     }
 
     /// Locate and group clips belonging to the same
@@ -200,7 +280,8 @@ impl GoProSession {
         video: Option<&Path>,
         verify_gpmf: bool,
         verbose: bool,
-    ) -> Vec<Self> {
+        continue_on_error: bool,
+    ) -> Result<Vec<Self>, GpmfError> {
         // Key = Blake3 hash as Vec<u8> of extracted GPMF raw bytes
         // TODO below should be Vec<GoProFile> then use first one that produces GPMF with no errors when sorting
         let mut hash2gopro: HashMap<Vec<u8>, GoProFile> = HashMap::new();
@@ -221,64 +302,78 @@ impl GoProSession {
             };
 
             if let Some(ext) = has_extension(&path, &["mp4", "lrv"]) {
-                if let Ok(gp) = GoProFile::new(&path) {
-                    if verbose {
-                        count += 1;
-                        print!(
-                            "{:4}. [{:12} {}] {}",
-                            count,
-                            gp.device.to_str(),
-                            ext.to_uppercase(),
-                            path.display()
-                        );
-                    }
-
-                    // Optionally do a full GPMF parse to prune
-                    // corrupt files (will otherwise possibly overwrite entry in hashmap)
-                    if verify_gpmf {
-                        if let Err(_err) = gp.gpmf() {
-                            println!(" [SKIPPING: GPMF ERROR]");
-                            continue;
-                        } else {
-                            println!(" [GPMF OK]");
-                        }
+                let gp_result = GoProFile::new(&path);
+                let gp = match gp_result {
+                    Ok(gp) => gp,
+                    Err(err) => if continue_on_error {
+                        continue;
                     } else {
-                        println!("");
-                    }
-
-                    if let Some(gp_session) = &gopro_in_session {
-                        if gp.device != gp_session.device {
-                            continue;
-                        }
-                        match gp.device {
-                            DeviceName::Hero11Black => {
-                                if gp.muid != gp_session.muid {
-                                    continue;
-                                }
-                            }
-                            _ => {
-                                if gp.gumi != gp_session.gumi {
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-
-                    // `set_path()` sets MP4 or LRV path based on file extension
-                    hash2gopro
-                        .entry(gp.fingerprint.to_owned())
-                        .or_insert(gp)
-                        .set_path(&path);
+                        return Err(err)
+                    },
+                };
+                if verbose {
+                    count += 1;
+                    print!(
+                        "{:4}. [{:12} {}] {}",
+                        count,
+                        gp.device.to_str(),
+                        ext.to_uppercase(),
+                        path.display()
+                    );
                 }
+
+                // Optionally do a full GPMF parse to prune
+                // corrupt files (will otherwise possibly overwrite entry in hashmap)
+                if verify_gpmf {
+                    if let Err(_err) = gp.gpmf() {
+                        println!(" [SKIPPING: GPMF ERROR]");
+                        continue;
+                    } else {
+                        println!(" [GPMF OK]");
+                    }
+                } else {
+                    println!("");
+                }
+
+                if let Some(gp_session) = &gopro_in_session {
+                    if gp.device != gp_session.device {
+                        continue;
+                    }
+                    match gp.device {
+                        DeviceName::Hero11Black => {
+                            if gp.muid != gp_session.muid {
+                                continue;
+                            }
+                        }
+                        _ => {
+                            if gp.gumi != gp_session.gumi {
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                // `set_path()` sets MP4 or LRV path based on file extension
+                hash2gopro
+                    .entry(gp.fingerprint.to_owned())
+                    .or_insert(gp.clone())
+                    .merge(&gp)?;
+                    // .set_path(&path);
+                // }
             }
         }
 
         // 2. Group files on MUID or GUMI depending on model
+        if verbose {
+            println!("Compiling and sorting sessions...")
+        }
 
         // Group clips with the same full MUID ([u32; 8])
-        let mut muid2gopro: HashMap<Vec<u32>, Vec<GoProFile>> = HashMap::new();
-        // Group clips with the same full GUMI ([u8; 16])
-        let mut gumi2gopro: HashMap<Vec<u8>, Vec<GoProFile>> = HashMap::new();
+        // let mut muid2gopro: HashMap<Vec<u32>, Vec<GoProFile>> = HashMap::new();
+        let mut muid2gopro: HashMap<[u32; 8], Vec<GoProFile>> = HashMap::new();
+        // Group clips with the same full GUMI ([u8; 16]) reading as [u32; 4]
+        // let mut gumi2gopro: HashMap<Vec<u8>, Vec<GoProFile>> = HashMap::new();
+        let mut gumi2gopro: HashMap<[u32; 4], Vec<GoProFile>> = HashMap::new();
         for (_, gp) in hash2gopro.iter() {
             match gp.device {
                 // Hero 11 uses the same MUID for clips in the same session.
@@ -293,6 +388,86 @@ impl GoProSession {
                     .push(gp.to_owned()),
             };
         }
+
+        // Compile all sessions
+        let mut sessions = muid2gopro
+            .iter()
+            .map(|(_, session)| Self(session.to_owned()))
+            .chain(
+                gumi2gopro
+                    .iter()
+                    .map(|(_, session)| Self(session.to_owned())),
+            )
+            .collect::<Vec<_>>();
+
+        // 3. Sort files within groups on time of first frame since midnight
+        // FIXED? TODO possible that duplicate files (with different paths) will be included
+        sessions.iter_mut()
+            .for_each(|s| s.sort());
+
+        Ok(sessions)
+    }
+
+    pub fn sessions_from_path_par(
+        dir: &Path,
+        video: Option<&Path>,
+        verify_gpmf: bool,
+        verbose: bool,
+        inspect_format: Option<fn(&Path, Option<usize>) -> String>,
+    ) -> Vec<Self> {
+        // Key = Blake3 hash as Vec<u8> of extracted GPMF raw bytes
+        // TODO below should be Vec<GoProFile> then use first one that produces GPMF with no errors when sorting
+        // let mut hash2gopro: HashMap<Vec<u8>, GoProFile> = HashMap::new();
+
+        let gopro_in_session = video.and_then(|p| GoProFile::new(p).ok());
+
+        // let mut count = 0;
+
+        println!("Compiling paths...");
+        let paths = paths(dir, &["mp4", "lrv"], inspect_format);
+        println!("Done ({} candidates found)", paths.len());
+        println!("Compiling GoPro files...");
+        let files = compile(&paths, verify_gpmf);
+        println!("Done ({} GoPro files verified)", files.len());
+        println!("Compiling GoPro sessions...");
+        let hash2gopro = hash2gopro(&files);
+        println!("Done ({} GoPro sessions found)", hash2gopro.len());
+
+        // 2. Group files on MUID or GUMI depending on model
+
+        // Group clips with the same full MUID ([u32; 8])
+        // let mut muid2gopro: HashMap<Vec<u32>, Vec<GoProFile>> = HashMap::new();
+        let mut muid2gopro: HashMap<[u32; 8], Vec<GoProFile>> = HashMap::new();
+        // Group clips with the same full GUMI ([u8; 16]) reading as [u32; 4]
+        // let mut gumi2gopro: HashMap<Vec<u8>, Vec<GoProFile>> = HashMap::new();
+        let mut gumi2gopro: HashMap<[u32; 4], Vec<GoProFile>> = HashMap::new();
+        for (_, gp) in hash2gopro.iter() {
+            match gp.device {
+                // Hero 11 uses the same MUID for clips in the same session.
+                DeviceName::Hero11Black => muid2gopro
+                    .entry(gp.muid.to_owned())
+                    .or_insert(Vec::new())
+                    .push(gp.to_owned()),
+                // Hero7 uses GUMI. Others unknown, GUMI is a pure guess.
+                _ => gumi2gopro
+                    .entry(gp.gumi.to_owned())
+                    .or_insert(Vec::new())
+                    .push(gp.to_owned()),
+                // // Hero 11 uses the same MUID for clips in the same session.
+                // DeviceName::Hero11Black => muid2gopro
+                //     .entry(gp.muid.to_owned())
+                //     .or_insert(Vec::new())
+                //     .push(gp.to_owned()),
+                // // Hero7 uses GUMI. Others unknown, GUMI is a pure guess.
+                // _ => gumi2gopro
+                //     .entry(gp.gumi.to_owned())
+                //     .or_insert(Vec::new())
+                //     .push(gp.to_owned()),
+            };
+        }
+
+        // println!("MUID {muid2gopro:#?}");
+        // println!("GUMI {gumi2gopro:#?}");
 
         if verbose {
             println!("Compiling and sorting sessions...")
@@ -309,24 +484,117 @@ impl GoProSession {
             )
             .collect::<Vec<_>>();
 
-        // 3. Sort files within groups on GPS datetime to determine sequence
+        // 3. Sort files within groups on time of first frame since midnight
         // TODO possible that duplicate files (with different paths) will be included
         sessions.iter_mut()
             .for_each(|s| s.sort());
 
-        sessions
+        if let Some(gp) = gopro_in_session {
+            sessions.iter()
+                .find_map(|s| if s.part_of(&gp) {Some(vec![s.to_owned()])} else {None})
+                .unwrap_or(Vec::new())
+        } else {
+            sessions
+        }
+    }
+
+    pub fn start(&self) -> Option<PrimitiveDateTime> {
+        self.first()
+            // .map(|f| f.creation_time)
+            .map(|f| f.start())
+    }
+
+    pub fn end(&self) -> Option<PrimitiveDateTime> {
+        // Some(self.start()? + self.duration().ok()?)
+        Some(self.start()? + self.duration())
     }
 
     /// Returns duration of session.
-    pub fn duration(&self) -> Result<Duration, GpmfError> {
+    // pub fn duration(&self) -> Result<Duration, GpmfError> {
+    pub fn duration(&self) -> Duration {
         self.iter().map(|g| g.duration()).sum()
     }
 
     /// Returns duration of session as milliseconds.
-    pub fn duration_ms(&self) -> Result<i64, GpmfError> {
-        self.duration()?
+    // pub fn duration_ms(&self) -> Result<i64, GpmfError> {
+    pub fn duration_ms(&self) -> i128 {
+        // self.duration()?
+        self.duration()
             .whole_milliseconds()
-            .try_into()
-            .map_err(|err| GpmfError::DowncastIntError(err))
+            // .try_into()
+            // .map_err(|err| GpmfError::DowncastIntError(err))
     }
+
+    pub fn part_of(&self, gopro: &GoProFile) -> bool {
+        self.iter().any(|gp| gopro.matches(gp))
+    }
+
+    // combine goprofile fingerprints to generate unique id for session.
+    // pub fn fingerprint()
+}
+
+fn paths(dir: &Path, ext: &[&str], inspect_format: Option<fn(&Path, Option<usize>) -> String>) -> Vec<PathBuf> {
+    WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|result| if let Ok(entry) = result {
+            let p = entry.path();
+            // let e = p.extension().and_then(|e| e.to_ascii_lowercase().to_str());
+            if let Some(e) = p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()) {
+                if ext.contains(&e.as_str()) {
+                    Some(p.to_owned())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        })
+        .enumerate()
+        .inspect(|(i, p)| if let Some (f) = inspect_format {
+            println!("{}", f(p, Some(*i)));
+        })
+        .map(|(_, p)| p)
+        .collect()
+}
+
+// fn hash2gopro(paths: &[PathBuf], verify_gpmf: bool) -> HashMap<Vec<u8>, GoProFile> {
+// fn compile(paths: &[PathBuf]) -> HashMap<Vec<u8>, GoProFile> {
+// fn compile(paths: &[PathBuf], verify_gpmf: bool, inspect_format: Option<fn(&Path, usize) -> String>) -> Vec<(GoProFile, PathBuf)> {
+fn compile(paths: &[PathBuf], verify_gpmf: bool) -> Vec<(GoProFile, PathBuf)> {
+    // paths.par_iter()
+    //     .map(|path| GoProFile::new(path))
+    //     .collect::<Result<Vec<GoProFile>, GpmfError>>()
+    let progress = ProgressBar::new(paths.len() as u64);
+    paths.par_iter()
+        // .progress()
+        // Passing on input path as well to ensure it's used in the next step
+        .filter_map(|path| {
+            let gp = GoProFile::new(&path).ok()?;
+            // dbg!(&gp);
+            match verify_gpmf {
+                true => if gp.gpmf().is_ok() {
+                    // println!("[{:12}] {} [OK]", gp.device.to_str(), path.display());
+                    Some((gp, path.to_owned()))
+                } else {
+                    // println!("[{:12}] {} [ERROR: SKIPPING]", gp.device.to_str(), path.display());
+                    None
+                },
+                false => Some((gp, path.to_owned()))
+            }
+        })
+        .inspect(|_| progress.inc(1))
+        .collect()
+}
+
+fn hash2gopro(files: &[(GoProFile, PathBuf)]) -> HashMap<Vec<u8>, GoProFile> {
+    let mut hash2gopro: HashMap<Vec<u8>, GoProFile> = HashMap::new();
+    for (gp, path) in files.iter() {
+        hash2gopro
+            .entry(gp.fingerprint.to_owned())
+            .or_insert(gp.to_owned())
+            .set_path(&path);
+    }
+    hash2gopro
 }
