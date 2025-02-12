@@ -22,8 +22,8 @@ fn main() -> std::io::Result<()> {
     let gpmf = Gpmf::new(&path, false)?;
     println!("{gpmf:#?}");
 
-    // Filter and process GPS log, prune points that do not have at least a 2D fix
-    let gps = gpmf.gps().prune(2);
+    // Filter and process GPS log, prune points that do not have at least a 2D fix, and dilution of precision above 5.0.
+    let gps = gpmf.gps().prune(Some(2), Some(5.0));
     println!("{gps:#?}");
 
     // Filter and process accelerometer data.

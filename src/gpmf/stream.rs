@@ -44,7 +44,7 @@ pub enum StreamType {
 }
 
 impl Stream {
-    /// Create new GPMF `Stream` from reader, e.g. a
+    /// Create new GPMF `Stream` from a reader, e.g. a
     /// `BufReader` over an MP4-file. Read limit in bytes
     /// must be manually set to represent the size of
     /// the GPMF stream.
@@ -60,8 +60,9 @@ impl Stream {
         debug: bool
     ) -> Result<Vec<Self>, GpmfError> {
 
-        // Type definitions (BaseType::TYPE) for BaseType::COMPLEX. 'TYPE' must precede 'COMPLEX',
-        // e.g. for TYPE: "cF" -> BaseType::COMPLEX(Vec<BaseType::ASCII(_), BaseType::FOURCC(_))
+        // Type definitions (BaseType::TYPE) for BaseType::COMPLEX.
+        // 'TYPE' must precede 'COMPLEX'. E.g. TYPE = "cF" results in
+        // BaseType::COMPLEX(Vec<BaseType::ASCII(_), BaseType::FOURCC(_)).
         let mut complex: Option<String> = None;
 
         let mut streams: Vec<Self> = Vec::new();
@@ -69,17 +70,15 @@ impl Stream {
         // TODO check if read limit should substract header size above or below? works any way right now...
 
         let max = reader.seek(SeekFrom::Current(0))? + read_limit as u64;
-        // let mut count = 0;
         while reader.seek(SeekFrom::Current(0))? < max {
-            // println!("{} LOOPING OVER MP4", count + 1);
-            // count += 1;
-            // 8 byte header
             let header = Header::new(reader)?;
-            // dbg!(&header);
-            // let header = Header::new(&mut cursor)?;
 
             if debug {
-                println!("@{} {header:3?} | LEN: {}", reader.seek(SeekFrom::Current(0))?, header.size(true) + 8); // position is only offset from start of current DEVC, not entire MP4
+                // position is only offset from start of current DEVC, not entire MP4
+                println!("@{} {header:3?} | LEN: {}",
+                    reader.seek(SeekFrom::Current(0))?,
+                    header.size(true) + 8
+                );
             }
 
             // `FourCC::Invalid` currently a check for `&[0,0,0,0, ...]`

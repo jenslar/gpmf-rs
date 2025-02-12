@@ -19,7 +19,7 @@ pub enum DeviceName {
     Hero10Black, // DVNM "Hero10 Black" or "HERO10 Black" (MP4 GoPro MET udta>minf atom)
     Hero11Black, // DVNM "Hero11 Black" or "HERO11 Black" (MP4 GoPro MET udta>minf atom)
     Hero12Black, // DVNM "Hero12 Black" or "HERO12 Black" (MP4 GoPro MET udta>minf atom)
-    // Hero13Black, // DVNM "Hero12 Black" or "HERO12 Black" (MP4 GoPro MET udta>minf atom)
+    Hero13Black, // DVNM "Hero13 Black" or "HERO13 Black" (MP4 GoPro MET udta>minf atom)
     Fusion,
     GoProMax,
     GoProKarma,  // DVNM "GoPro Karma v1.0" + whichever device is connected e.g. hero 5.
@@ -64,6 +64,7 @@ impl DeviceName {
             "H21" => Self::Hero10Black,
             "H22" => Self::Hero11Black,
             "H23" => Self::Hero12Black,
+            "H24" => Self::Hero13Black, // e.g. H24.01.01.12.00
             _ => Self::Unknown
         }
     }
@@ -79,6 +80,7 @@ impl DeviceName {
             "Hero10 Black" | "HERO10 Black" => Self::Hero10Black,
             "Hero11 Black" | "HERO11 Black" => Self::Hero11Black,
             "Hero12 Black" | "HERO12 Black" => Self::Hero12Black,
+            "Hero13 Black" | "HERO13 Black" => Self::Hero13Black,
             "Fusion" | "FUSION" => Self::Fusion,
             "GoPro Max" => Self::GoProMax,
             "GoPro Karma v1.0" => Self::GoProKarma,
@@ -96,6 +98,7 @@ impl DeviceName {
             Self::Hero10Black => "Hero10 Black",
             Self::Hero11Black => "Hero11 Black",
             Self::Hero12Black => "Hero12 Black",
+            Self::Hero13Black => "Hero13 Black",
             Self::Fusion => "Fusion",
             Self::GoProMax => "GoPro Max",
             Self::GoProKarma => "GoPro Karma v1.0", // only v1.0 so far

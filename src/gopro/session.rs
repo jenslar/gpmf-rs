@@ -6,6 +6,7 @@ use std::{
 };
 
 use indicatif::{ParallelProgressIterator, ProgressBar};
+use mp4iter::Mp4Error;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use time::{Duration, PrimitiveDateTime};
 use walkdir::WalkDir;
@@ -134,8 +135,8 @@ impl GoProSession {
     /// files in session to a single `Gpmf` struct.
     pub fn gpmf(&self) -> Result<Gpmf, GpmfError> {
         let mut gpmf = Gpmf::default();
-        for gopro in self.iter() {
-            gpmf.merge_mut(&mut gopro.gpmf()?);
+        for file in self.iter() {
+            gpmf.merge_mut(&mut file.gpmf()?);
         }
         Ok(gpmf)
     }
@@ -308,7 +309,13 @@ impl GoProSession {
                     Err(err) => if continue_on_error {
                         continue;
                     } else {
-                        return Err(err)
+                        match err {
+                            // Always continue on error due to no "GoPro MET" track
+                            GpmfError::Mp4Error(Mp4Error::NoSuchTrack(_)) => {
+                                continue;
+                            },
+                            _ => return Err(err)
+                        }
                     },
                 };
                 if verbose {
@@ -377,7 +384,10 @@ impl GoProSession {
         for (_, gp) in hash2gopro.iter() {
             match gp.device {
                 // Hero 11 uses the same MUID for clips in the same session.
-                DeviceName::Hero11Black => muid2gopro
+                // Currently an assumption that so do Hero 12 and Hero 13.
+                DeviceName::Hero11Black
+                | DeviceName::Hero12Black
+                | DeviceName::Hero13Black => muid2gopro
                     .entry(gp.muid.to_owned())
                     .or_insert(Vec::new())
                     .push(gp.to_owned()),
@@ -444,7 +454,10 @@ impl GoProSession {
         for (_, gp) in hash2gopro.iter() {
             match gp.device {
                 // Hero 11 uses the same MUID for clips in the same session.
-                DeviceName::Hero11Black => muid2gopro
+                // Currently an assumption that so do Hero 12 and Hero 13.
+                DeviceName::Hero11Black
+                | DeviceName::Hero12Black
+                | DeviceName::Hero13Black => muid2gopro
                     .entry(gp.muid.to_owned())
                     .or_insert(Vec::new())
                     .push(gp.to_owned()),

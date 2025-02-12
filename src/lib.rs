@@ -25,7 +25,7 @@
 //!     println!("{gpmf:#?}");
 //!
 //!     // Filter and process GPS log, prune points that do not have at least a 2D fix,
-//!     // and a dilution of position value of max 5.0.
+//!     // and a dilution of precision value of max 5.0.
 //!     let gps = gpmf.gps().prune(2, Some(5.0));
 //!     println!("{gps:#?}");
 //!
@@ -44,6 +44,7 @@ mod content_types;
 mod gopro;
 mod constants;
 mod types;
+mod tests;
 
 pub use gpmf::{
     Gpmf,

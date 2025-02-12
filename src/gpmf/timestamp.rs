@@ -1,5 +1,6 @@
 //! Convenience structure for dealing with relative timestamps.
 
+use mp4iter::Sample;
 use time::{self, Duration};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd)]
@@ -31,6 +32,15 @@ impl From<(Duration, Duration)> for Timestamp {
         Self {
             relative: value.0,
             duration: value.1,
+        }
+    }
+}
+
+impl From<&Sample> for Timestamp {
+    fn from(value: &Sample) -> Self {
+        Self {
+            relative: value.relative(),
+            duration: value.duration(),
         }
     }
 }

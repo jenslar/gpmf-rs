@@ -13,7 +13,7 @@ use std::{
 
 use binrw::Endian;
 use blake3;
-use mp4iter::{Mp4, Offset, Offsets};
+use mp4iter::{Mp4, SampleOffset, SampleOffsets};
 use time::{
     Duration,
     PrimitiveDateTime,
@@ -121,10 +121,12 @@ impl GoProFile {
         // !!! and/or not reset to start all the time
         // !!! to avoid seeking back and forth in mp4
 
-        gopro.time_first_frame = mp4.time_first_frame(GOPRO_TIMECODE_HANDLER, false)?;
+        gopro.time_first_frame = mp4.time_first_frame(false)?;
 
         // Get GPMF DEVC byte offsets, duration, and sizes
-        let offsets = mp4.offsets(&GOPRO_METADATA_HANDLER, true)?;
+        // let offsets = mp4.offsets(&GOPRO_METADATA_HANDLER, true)?;
+        let track_gpmf = mp4.track(mp4iter::TrackIdentifier::Name(GOPRO_METADATA_HANDLER), true)?;
+        let first_offset = track_gpmf.offsets().nth(0).cloned();
 
         // Set MP4 time stamps
         let (creation_time, duration) = mp4.time(true)?;
@@ -150,7 +152,7 @@ impl GoProFile {
         gopro.gumi = Self::gumi_internal(&mut mp4)?;
 
         // Set fingerprint as hash of first raw GPMF byte stream
-        gopro.fingerprint = Self::fingerprint_internal_mp4(&mut mp4, offsets.first())?;
+        gopro.fingerprint = Self::fingerprint_internal_mp4(&mut mp4, first_offset.as_ref())?;
 
         Ok(gopro)
     }
@@ -247,14 +249,14 @@ impl GoProFile {
     /// identical for high and low resolution clips.
     fn fingerprint_internal_mp4(
         mp4: &mut mp4iter::Mp4,
-        offset: Option<&Offset>
+        offset: Option<&SampleOffset>
     ) -> Result<Vec<u8>, GpmfError> {
         let mut cursor = match offset {
             // Some(o) => mp4.cursor_at(o.position, o.size as u64)?,
             // Some(o) => mp4.cursor(o.size as u64, Some(o.position))?,
             // Some(o) => mp4.cursor(&Source::File, o.size as u64, Some(o.position))?,
             Some(o) => mp4.cursor(o.size as u64, Some(SeekFrom::Start(o.position)))?,
-            None => Gpmf::first_raw_mp4(mp4)?
+            None => Gpmf::first_sample(mp4)?.into()
         };
 
         let mut hasher = blake3::Hasher::new();
@@ -359,16 +361,19 @@ impl GoProFile {
         Ok(Mp4::new(&path)?)
     }
 
-    /// Returns GPMF byte offsets as `Vec<mp4iter::offset::Offset>`
-    /// for the specified filetype:
-    /// - high-res = `GoProFileType::High`
-    /// - low-res = `GoProFileType::Low`,
-    /// - either = `GoProFileType::Any`.
-    // pub fn offsets(&self, filetype: GoProFileType) -> Result<Vec<Offset>, GpmfError> {
-    pub fn offsets(&self, filetype: GoProFileType) -> Result<Offsets, GpmfError> {
-        let mut mp4 = self.mp4(filetype)?;
-        mp4.offsets("GoPro MET", true).map_err(|err| err.into()) // GpmfError::Mp4Error(err))
-    }
+    // /// Returns GPMF byte offsets as `Vec<mp4iter::offset::Offset>`
+    // /// for the specified filetype:
+    // /// - high-res = `GoProFileType::High`
+    // /// - low-res = `GoProFileType::Low`,
+    // /// - either = `GoProFileType::Any`.
+    // // pub fn offsets(&self, filetype: GoProFileType) -> Result<Vec<Offset>, GpmfError> {
+    // pub fn offsets<'a>(&'a self, filetype: GoProFileType) -> Result<&'a [Offset], GpmfError> {
+    //     let mut mp4 = self.mp4(filetype)?;
+    //     // mp4.offsets("GoPro MET", true).map_err(|err| err.into()) // GpmfError::Mp4Error(err))
+    //     // mp4.offsets("GoPro MET", true).map_err(|err| err.into()) // GpmfError::Mp4Error(err))
+    //     let track = mp4.track(&GOPRO_METADATA_HANDLER, true)?;
+    //     Ok(track.attributes.offsets())
+    // }
 
     /// Returns embedded GPMF data.
     pub fn gpmf(&self) -> Result<Gpmf, GpmfError> {

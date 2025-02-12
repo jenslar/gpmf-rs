@@ -260,7 +260,8 @@ impl GoProPoint {
     /// 
     /// Stream name (`STNM`): "GPS (Lat., Long., Alt., 2D, 3D, days, secs, DOP, fix)"
     pub fn from_gps9(devc_stream: &Stream) -> Option<Vec<Self>> {
-        // GPS9 contains more info than GPS5, including datetime per-point:
+        // GPS9 contains more info than GPS5, including datetime per-point,
+        // dilution of precision and satellite lock level:
         // [lat, lon, alt, 2d speed, 3d speed, days, seconds, dop, fix]
         // On average 10 coordinates per GPS9 message.
         // 230323 GPS9 is a Complex value (GPS5 is not). Added Into<Vec<f64>> for Value::Complex, works so far.

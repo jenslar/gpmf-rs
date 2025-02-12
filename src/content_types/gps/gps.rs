@@ -1,3 +1,6 @@
+use core::f64;
+use std::u32;
+
 use time::{Duration, PrimitiveDateTime};
 use crate::content_types::primitivedatetime_to_string;
 
@@ -37,7 +40,7 @@ impl Gps {
     }
 
     /// Returns center of GPS points cluster.
-    pub fn center(&self) -> GoProPoint{
+    pub fn center(&self) -> Option<GoProPoint> {
         points_average(&self.0)
     }
 
@@ -78,7 +81,7 @@ impl Gps {
     }
 
     /// Prune points if `gps_fix_min` is below specified value,
-    /// i.e. the number of satellites the GPS is locked on to.
+    /// derived from the number of satellites the GPS is locked on to.
     /// If satellite lock is not acquired,
     /// the device will log zeros or possibly latest known location with a
     /// GPS fix of `0`, meaning both time and location will be
@@ -92,28 +95,25 @@ impl Gps {
     /// in `GPSF`. Hero11 and later deprecate `GPS5` the value in GPS9
     /// should be used instead.
     ///
-    /// `min_dop` corresponds to [dilution of position](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)).
+    /// `min_dop` corresponds to [dilution of precision](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)).
     /// For Hero10 and earlier (`GPS5` devices) this is logged in `GPSP`.
     /// For Hero11 an later (`GPS9` devices) DOP is logged in `GPS9`.
     /// A value value below 500 is good
     /// according to <https://github.com/gopro/gpmf-parser>.
-    pub fn prune(self, min_gps_fix: u32, max_dop: Option<f64>) -> Self {
+    pub fn prune(self, min_fix: Option<u32>, max_dop: Option<f64>) -> Self {
         // GoPro has four levels: 0, 2, 3 (No lock, 2D lock, 3D lock)
+        let fix = min_fix.unwrap_or(u32::MIN); // set to 0 to let all pass through
+        let dop = max_dop.unwrap_or(f64::MAX); // set to MAX/+INF to let all pass through
         Self(
             self.0
                 .into_iter()
-                .filter(|p| match max_dop {
-                    Some(dop) => {
-                        (p.dop < dop) && (p.fix >= min_gps_fix)
-                    }
-                    None => p.fix >= min_gps_fix
-                })
+                .filter(|p| p.dop <= dop && p.fix >= fix)
                 .collect::<Vec<_>>(),
         )
     }
 
     /// Prune points mutably if `gps_fix_min` is below specified value,
-    /// i.e. the number of satellites the GPS is locked on to,
+    /// derived from the number of satellites the GPS is locked on to,
     /// and returns the number of points pruned.
     /// If satellite lock is not acquired,
     /// the device will log zeros or possibly latest known location with a
@@ -133,33 +133,45 @@ impl Gps {
     /// in `GPSF`. Hero11 and later deprecate `GPS5` the value in GPS9
     /// should be used instead.
     ///
-    /// `min_dop` corresponds to [dilution of position](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)).
+    /// `min_dop` corresponds to [dilution of precision](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)).
     /// For Hero10 and earlier (`GPS5` devices) this is logged in `GPSP`.
-    /// For Hero11 an later (`GPS9` devices) DOP is logged in `GPS9`.
-    /// A value below 500 is good
-    /// according to <https://github.com/gopro/gpmf-parser>.
-    pub fn prune_mut(&mut self, min_gps_fix: u32, max_dop: Option<f64>) -> usize {
+    /// For Hero11 an later (`GPS9` devices) DOP is logged in `GPS9`
+    /// (Hero12 does not have a GPS module, Hero 13 again includes one).
+    /// A value below 5 (unscaled GPMF value of 500) is good.
+    /// See <https://github.com/gopro/gpmf-parser>.
+    pub fn prune_mut(&mut self, min_fix: Option<u32>, max_dop: Option<f64>) -> usize {
+        let len1 = self.len();
+        let fix = min_fix.unwrap_or(u32::MIN); // set to 0 to let all pass through
+        let dop = max_dop.unwrap_or(f64::MAX); // set to MAX/+INF to let all pass through
+        self.0.retain(|p| p.dop <= dop && p.fix >= fix);
+        let len2 = self.len();
+        return len1 - len2;
+    }
+    fn prune_mut_old(&mut self, min_fix: u32, max_dop: Option<f64>) -> usize {
         let len1 = self.len();
         self.0.retain(|p| match max_dop {
             Some(dop) => {
-                (p.dop < dop) && (p.fix >= min_gps_fix)
+                (p.dop < dop) && (p.fix >= min_fix)
             }
-            None => p.fix >= min_gps_fix
+            None => p.fix >= min_fix
         });
         let len2 = self.len();
         return len1 - len2;
     }
 }
 
-/// Returns a latitude dependent average for specified points.
-///
-/// Timestamps are currently not averaged,
-/// instead first timestamp in cluster is used.
-pub(crate) fn points_average(points: &[GoProPoint]) -> GoProPoint {
+/// Returns a latitude dependent average coordinate for specified points.
+pub(crate) fn points_average(points: &[GoProPoint]) -> Option<GoProPoint> {
     // see: https://carto.com/blog/center-of-points/ NO LONGER UP
     // atan2(y,x) where y = sum((sin(yi)+...+sin(yn))/n), x = sum((cos(xi)+...cos(xn))/n), y, i in radians
 
     let dur_total: Duration = points.iter().map(|p| p.time).sum();
+    // let datetime_first = points.first().map(|p| p.datetime)?;
+    // let datetime_last = points.last().map(|p| p.datetime)?;
+    // let datetime_avg: PrimitiveDateTime = match points.len() {
+    //     1 => datetime_first,
+    //     _ => datetime_first + Duration::seconds_f64((datetime_last - datetime_first).as_seconds_f64() / 2.)
+    // };
 
     let deg2rad = std::f64::consts::PI / 180.0; // inverse for radians to degress
 
@@ -173,8 +185,8 @@ pub(crate) fn points_average(points: &[GoProPoint]) -> GoProPoint {
     let mut fix: Vec<f64> = Vec::new();
 
     for pt in points.iter() {
-        lon_rad_sin.push((pt.longitude * deg2rad).sin()); // get the sin values immediately
-        lon_rad_cos.push((pt.longitude * deg2rad).cos()); // get the cos values immediately
+        lon_rad_sin.push((pt.longitude * deg2rad).sin());
+        lon_rad_cos.push((pt.longitude * deg2rad).cos());
         lat_rad.push(pt.latitude * deg2rad); // arithmetic avg ok, only converts to radians
         alt.push(pt.altitude);
         // magnetometer is MAX cameras only
@@ -187,7 +199,7 @@ pub(crate) fn points_average(points: &[GoProPoint]) -> GoProPoint {
         fix.push(pt.fix as f64);
     }
 
-    // AVERAGING LATITUDE DEPENDANT LONGITUDES
+    // AVERAGING LATITUDE DEPENDENT LONGITUDES
     let lon_rad_sin_sum = average(&lon_rad_sin);
     let lon_rad_cos_sum = average(&lon_rad_cos);
     let lon_avg_deg = f64::atan2(lon_rad_sin_sum, lon_rad_cos_sum) / deg2rad; // -> degrees
@@ -203,7 +215,7 @@ pub(crate) fn points_average(points: &[GoProPoint]) -> GoProPoint {
     let dop_avg = average(&dop);
     let fix_avg = average(&fix);
 
-    GoProPoint {
+    Some(GoProPoint {
         latitude: lat_avg_deg,
         longitude: lon_avg_deg,
         altitude: alt_avg,
@@ -212,7 +224,8 @@ pub(crate) fn points_average(points: &[GoProPoint]) -> GoProPoint {
         speed3d: sp3d_avg,
         // Use datetime for first point in cluster to represent the start
         // of the timestamp for averaged points. (rather than average datetime)
-        datetime: points.first().map(|p| p.datetime).expect("No points logged"),
+        datetime: points.first().map(|p| p.datetime)?,
+        // datetime: datetime_avg,
         // timestamp: should be start of first point not average,
         // so that timestamp + duration = timespan within which all averaged points were logged
         // timestamp: ts_first, // TODO test! hero11 then virb (remove set_timedelta for virb)
@@ -224,7 +237,7 @@ pub(crate) fn points_average(points: &[GoProPoint]) -> GoProPoint {
         // description,
         dop: dop_avg,
         fix: fix_avg as u32 // meaningless but eh...
-    }
+    })
 }
 
 fn average(nums: &[f64]) -> f64 {

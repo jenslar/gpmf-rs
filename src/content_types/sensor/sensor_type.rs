@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{DataType, DeviceName};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SensorType {
     Accelerometer,
     GravityVector,
@@ -64,7 +64,7 @@ impl SensorType {
             _ => Self::Unknown
         }
     }
-    
+
     pub fn units(&self) -> &str {
         match &self {
             SensorType::Accelerometer => "m/s²",
