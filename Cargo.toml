@@ -12,8 +12,7 @@ rayon = "1.10"
 time = {version = "0.3.37", features = ["formatting", "parsing", "macros"]}
 walkdir = "2.5"
 geojson = {version = "0.24", features = ["geo-types"]}
-# mp4iter = {git = "https://github.com/jenslar/mp4iter.git"}
-mp4iter = {path = "../mp4iter"}
+mp4iter = {git = "https://github.com/jenslar/mp4iter.git"}
 jpegiter = {git = "https://github.com/jenslar/jpegiter.git"}
 blake3 = "1.5.5"
 binrw = "0.14.1"
