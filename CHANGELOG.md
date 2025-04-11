@@ -1,3 +1,6 @@
+# v0.5.1
+- Bump crates.
+
 # v0.5
 - NEW: Initial Hero 13 Black compatibility. Only verified against a single, short sample.
 - BREAKING: `GoProSession::sessions_from_path()` now silently continues if track `GoPro MET` is not found (previous version raised error).
