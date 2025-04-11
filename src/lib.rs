@@ -44,7 +44,6 @@ mod content_types;
 mod gopro;
 mod constants;
 mod types;
-mod tests;
 
 pub use gpmf::{
     Gpmf,
