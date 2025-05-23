@@ -1,6 +1,6 @@
 use std::{path::Path, ffi::OsStr};
 
-/// Matches file extension of `path` 
+/// Matches file extension of `path`
 pub(crate) fn has_extension_single(path: &Path, ext: &str) -> bool {
     // ensure file extension does not start with '.'
     let ext = ext.trim_start_matches(".");
@@ -19,6 +19,13 @@ pub(crate) fn has_extension(path: &Path, exts: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+pub fn filename_startswith(path: &Path, pattern: &str) -> bool {
+    path.file_name()
+        .and_then(|f| f.to_str())
+        .map(|s| s.starts_with(pattern))
+        .unwrap_or(false)
 }
 
 /// Returns file extension as lower case string.

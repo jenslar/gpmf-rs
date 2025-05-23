@@ -45,6 +45,15 @@ impl From<&Sample> for Timestamp {
     }
 }
 
+impl From<&mut Sample> for Timestamp {
+    fn from(value: &mut Sample) -> Self {
+        Self {
+            relative: value.relative(),
+            duration: value.duration(),
+        }
+    }
+}
+
 impl Timestamp {
     /// New Timestamp. `relative` equals time in milliseconds
     /// from video start time,

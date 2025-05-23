@@ -1,10 +1,14 @@
+# v0.5.2
+- FIX (or BREAKING): `GoProSession::sessions_from_path()` now silently skips any MP4/LRV-file if file name starts with `._`. On macOS these so far contain only quarantine attributes and are regardless not valid MP4-files.
+- Bumped crate versions.
+
 # v0.5.1
-- Bump crates.
+- Bumped crate versions.
 
 # v0.5
 - NEW: Initial Hero 13 Black compatibility. Only verified against a single, short sample.
 - BREAKING: `GoProSession::sessions_from_path()` now silently continues if track `GoPro MET` is not found (previous version raised error).
-- BREAKING: `Gps::prune()` accept optional GPS satellite lock level (`0`, `2` = 2D lock, `3` = 3D), and optional dilution of precision (below 5.0 is usually good).
+- BREAKING: `Gps::prune()` accept optional GPS satellite lock level (`0` = no lock, `2` = 2D lock, `3` = 3D), and optional dilution of precision (below 5.0 is usually good).
 
 # v0.4
 - NOTE: Hero 13 Black compatibility is unknown until I get hold of sample files (it once again has a GPS module)

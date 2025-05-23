@@ -5,7 +5,7 @@
 /// i.e. the the way the data is
 /// stored according to the right-hand
 /// rule.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Orientation {
     XYZ,
     XZY,

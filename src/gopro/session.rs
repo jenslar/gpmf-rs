@@ -11,7 +11,7 @@ use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterato
 use time::{Duration, PrimitiveDateTime};
 use walkdir::WalkDir;
 
-use crate::{files::has_extension, DeviceName, Gpmf, GpmfError};
+use crate::{files::{filename_startswith, has_extension}, DeviceName, Gpmf, GpmfError};
 
 use super::{GoProFile, GoProMeta};
 
@@ -139,6 +139,16 @@ impl GoProSession {
             gpmf.merge_mut(&mut file.gpmf()?);
         }
         Ok(gpmf)
+    }
+
+    /// Merges uninterpreted GPMF-data for all
+    /// files in session.
+    pub fn gpmf_raw(&self) -> Result<Vec<u8>, GpmfError> {
+        let mut bytes: Vec<u8> = Vec::new();
+        for file in self.iter() {
+            bytes.extend(file.gpmf_raw()?);
+        }
+        Ok(bytes)
     }
 
     /// Extracts custom user data in MP4 `udta`
@@ -276,6 +286,11 @@ impl GoProSession {
     ///
     /// `verify_gpmf` does a full parse on each GoPro file, and discards
     /// corrupt ones.
+    ///
+    /// > Note: Silently skips MP4/LRV-files if filename starts with `._`
+    /// > These are `AppleDouble` files, which so far only contains
+    /// > quarantine attributes and regardless are not structured
+    /// > as an MP4-file.
     pub fn sessions_from_path(
         dir: &Path,
         video: Option<&Path>,
@@ -303,6 +318,12 @@ impl GoProSession {
             };
 
             if let Some(ext) = has_extension(&path, &["mp4", "lrv"]) {
+                // Skip 'AppleDouble' files on macOS.
+                // Seems to be quarantine files so far.
+                if filename_startswith(&path, "._") {
+                    continue;
+                }
+
                 let gp_result = GoProFile::new(&path);
                 let gp = match gp_result {
                     Ok(gp) => gp,
@@ -333,10 +354,10 @@ impl GoProSession {
                 // corrupt files (will otherwise possibly overwrite entry in hashmap)
                 if verify_gpmf {
                     if let Err(_err) = gp.gpmf() {
-                        println!(" [SKIPPING: GPMF ERROR]");
+                        println!(" [ERROR: SKIPPING]");
                         continue;
                     } else {
-                        println!(" [GPMF OK]");
+                        println!(" [OK]");
                     }
                 } else {
                     println!("");

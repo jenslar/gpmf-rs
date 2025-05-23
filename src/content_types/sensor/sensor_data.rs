@@ -8,7 +8,7 @@ use super::{SensorField, Orientation, SensorQuantifier};
 /// - Accelerometer, fields are acceleration (m/s2).
 /// - Gyroscope, fields are rotation (rad/s).
 /// - Gravity vector, fields are direction of gravity in relation to camera angle.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SensorData {
     /// Camera device name
     pub device: DeviceName,
@@ -44,17 +44,21 @@ impl SensorData {
             .and_then(|s| s.first_value())
             .and_then(|s| s.into());
 
+        let orientation = orientation_str
+            .map(|s| Orientation::from(s.as_str()))
+            .unwrap_or(Orientation::XZY);
+
         let units: Option<String> = devc_stream
             .find(&FourCC::SIUN)
             .and_then(|s| s.first_value())
             .and_then(|s| s.into());
 
-        let orientation = match orientation_str {
-            Some(orin) => Orientation::from(orin.as_str()),
-            // None => Orientation::ZXY
-            // Changed to XZY: https://github.com/gopro/gpmf-parser/issues/170#issuecomment-1322414755
-            None => Orientation::XZY
-        };
+        // let orientation = match orientation_str {
+        //     Some(orin) => Orientation::from(orin.as_str()),
+        //     // None => Orientation::ZXY
+        //     // Changed to XZY: https://github.com/gopro/gpmf-parser/issues/170#issuecomment-1322414755
+        //     None => Orientation::XZY
+        // };
 
         let total: u32 = devc_stream
             .find(&FourCC::TSMP)
@@ -146,23 +150,23 @@ impl SensorData {
             .collect()
     }
 
-    /// Linear average of all x values.
-    pub fn x_avg(&self) -> f64 {
-        linear_average(&self.x())
+    /// Linear mean value of all x values.
+    pub fn x_mean(&self) -> f64 {
+        mean_value(&self.x())
     }
 
-    /// Linear average of all x values.
-    pub fn y_avg(&self) -> f64 {
-        linear_average(&self.y())
+    /// Linear mean value of all x values.
+    pub fn y_mean(&self) -> f64 {
+        mean_value(&self.y())
     }
 
-    /// Linear average of all x values.
-    pub fn z_avg(&self) -> f64 {
-        linear_average(&self.z())
+    /// Linear mean value of all x values.
+    pub fn z_mean(&self) -> f64 {
+        mean_value(&self.z())
     }
 
-    /// Returns linear average of all x, y, z values as tuple `(x, y, z)`.
-    pub fn xyz_avg(&self) -> (f64, f64, f64) {
+    /// Returns linear mean values of all x, y, z values as tuple `(x, y, z)`.
+    pub fn xyz_mean(&self) -> (f64, f64, f64) {
         let (x, y, z) = self.fields.iter()
             .fold((0., 0., 0.), |acc, f| (acc.0 + f.x, acc.1 + f.y, acc.2 + f.z));
         let len = self.fields.len() as f64;
@@ -171,6 +175,12 @@ impl SensorData {
     }
 }
 
-fn linear_average(values: &[f64]) -> f64 {
+/// Returns the linear mean value.
+fn mean_value(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
+}
+
+/// Returns the median value.
+fn median_value(values: &[f64]) {
+
 }

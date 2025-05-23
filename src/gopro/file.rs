@@ -13,7 +13,7 @@ use std::{
 
 use binrw::Endian;
 use blake3;
-use mp4iter::{Mp4, SampleOffset, SampleOffsets};
+use mp4iter::{Mp4, SampleOffset};
 use time::{
     Duration,
     PrimitiveDateTime,
@@ -125,7 +125,7 @@ impl GoProFile {
 
         // Get GPMF DEVC byte offsets, duration, and sizes
         // let offsets = mp4.offsets(&GOPRO_METADATA_HANDLER, true)?;
-        let track_gpmf = mp4.track(mp4iter::TrackIdentifier::Name(GOPRO_METADATA_HANDLER), true)?;
+        let track_gpmf = mp4.track(GOPRO_METADATA_HANDLER, true)?;
         let first_offset = track_gpmf.offsets().nth(0).cloned();
 
         // Set MP4 time stamps
@@ -382,7 +382,8 @@ impl GoProFile {
     }
 
     /// Returns single GPMF chunk (`DEVC`)
-    /// with `length` at specified `position` (byte offset).
+    /// with `length` at specified `position` (byte offset)
+    /// in an MP4 file.
     pub fn gpmf_at_offset(
         &self,
         mp4: &mut mp4iter::Mp4,
@@ -392,6 +393,12 @@ impl GoProFile {
     ) -> Result<Gpmf, GpmfError> {
         let mut cursor = mp4.cursor(length, Some(SeekFrom::Start(position)))?;
         Gpmf::from_cursor(&mut cursor, false)
+    }
+
+    /// Export GPMF uninterpreted.
+    pub fn gpmf_raw(&self) -> Result<Vec<u8>, GpmfError> {
+        let path = self.path()?;
+        Gpmf::export_raw(path)
     }
 
     /// Extract custom data in MP4 `udta` container.

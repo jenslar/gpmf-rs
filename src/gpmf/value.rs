@@ -1,6 +1,6 @@
 //! Core structure for GPMF raw data values.
 
-use std::{default, io::{BufRead, Read, Seek}};
+use std::io::{BufRead, Read, Seek};
 
 use binrw::{BinRead, BinReaderExt, BinResult};
 use time::{format_description, PrimitiveDateTime};

@@ -8,9 +8,17 @@ use super::GoProPoint;
 
 /// Gps point cluster, converted from `GPS5` or `GPS9`.
 #[derive(Debug, Default, Clone)]
-pub struct Gps(pub Vec<GoProPoint>);
+pub struct Gps(Vec<GoProPoint>);
 
 impl Gps {
+    pub fn new(points: Vec<GoProPoint>) -> Self {
+        Self(points)
+    }
+
+    pub fn points(&self) -> &[GoProPoint] {
+        &self.0
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -80,47 +88,15 @@ impl Gps {
             .and_then(|p| primitivedatetime_to_string(&p.datetime).ok())
     }
 
-    /// Prune points if `gps_fix_min` is below specified value,
-    /// derived from the number of satellites the GPS is locked on to.
+    /// Prune points if `min_satellite_lock` is below specified value,
+    /// or above `max_dilution_of_precision`.
+    ///
     /// If satellite lock is not acquired,
     /// the device will log zeros or possibly latest known location with a
     /// GPS fix of `0`, meaning both time and location will be
-    /// wrong.
+    /// unusable.
     ///
-    /// `min_gps_fix` corresponds to satellite lock and should be
-    /// at least 2 to ensure returned points have logged a position
-    /// that is in the vicinity of the camera.
-    /// Valid values are 0 (no lock), 2 (2D lock), 3 (3D lock).
-    /// On Hero 10 and earlier (devices that use `GPS5`) this is logged
-    /// in `GPSF`. Hero11 and later deprecate `GPS5` the value in GPS9
-    /// should be used instead.
-    ///
-    /// `min_dop` corresponds to [dilution of precision](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)).
-    /// For Hero10 and earlier (`GPS5` devices) this is logged in `GPSP`.
-    /// For Hero11 an later (`GPS9` devices) DOP is logged in `GPS9`.
-    /// A value value below 500 is good
-    /// according to <https://github.com/gopro/gpmf-parser>.
-    pub fn prune(self, min_fix: Option<u32>, max_dop: Option<f64>) -> Self {
-        // GoPro has four levels: 0, 2, 3 (No lock, 2D lock, 3D lock)
-        let fix = min_fix.unwrap_or(u32::MIN); // set to 0 to let all pass through
-        let dop = max_dop.unwrap_or(f64::MAX); // set to MAX/+INF to let all pass through
-        Self(
-            self.0
-                .into_iter()
-                .filter(|p| p.dop <= dop && p.fix >= fix)
-                .collect::<Vec<_>>(),
-        )
-    }
-
-    /// Prune points mutably if `gps_fix_min` is below specified value,
-    /// derived from the number of satellites the GPS is locked on to,
-    /// and returns the number of points pruned.
-    /// If satellite lock is not acquired,
-    /// the device will log zeros or possibly latest known location with a
-    /// GPS fix of `0`, meaning both time and location will be
-    /// wrong.
-    ///
-    /// `min_gps_fix` corresponds to satellite lock and should be
+    /// `min_satellite_lock` corresponds to satellite lock threshold and should be
     /// at least 2 to ensure returned points have logged a position
     /// that is in the vicinity of the camera.
     ///
@@ -129,16 +105,55 @@ impl Gps {
     /// - 2 (2D lock)
     /// - 3 (3D lock)
     ///
-    /// On Hero 10 and earlier (devices that use `GPS5`) this is logged
-    /// in `GPSF`. Hero11 and later deprecate `GPS5` the value in GPS9
-    /// should be used instead.
+    /// On Hero 10 and earlier (`GPS5` devices) this is logged
+    /// in `GPSF`. For Hero11 and later the value in `GPS9`
+    /// should be used.
     ///
-    /// `min_dop` corresponds to [dilution of precision](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)).
+    /// `max_dilution_of_precision` corresponds to [dilution of precision](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)) threshold.
     /// For Hero10 and earlier (`GPS5` devices) this is logged in `GPSP`.
-    /// For Hero11 an later (`GPS9` devices) DOP is logged in `GPS9`
-    /// (Hero12 does not have a GPS module, Hero 13 again includes one).
-    /// A value below 5 (unscaled GPMF value of 500) is good.
-    /// See <https://github.com/gopro/gpmf-parser>.
+    /// For Hero11 and later the value in `GPS9` should be used.
+    /// A value value below 5 (or unscaled 500) can be considered good.
+    pub fn prune(
+        self,
+        min_satellite_lock: Option<u32>,
+        max_dilution_of_precision: Option<f64>
+    ) -> Self {
+        // GoPro has four levels: 0, 2, 3 (No lock, 2D lock, 3D lock)
+        let min_lock = min_satellite_lock.unwrap_or(u32::MIN); // set to 0 to let all pass through
+        let max_dop = max_dilution_of_precision.unwrap_or(f64::MAX); // set to MAX/+INF to let all pass through
+        Self(
+            self.0
+                .into_iter()
+                .filter(|p| p.dop <= max_dop && p.fix >= min_lock)
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Prune points mutably if `min_satellite_lock` is below specified value,
+    /// or above `max_dilution_of_precision`. Returns number of pruned points.
+    ///
+    /// If satellite lock is not acquired,
+    /// the device will log zeros or possibly latest known location with a
+    /// GPS fix of `0`, meaning both time and location will be
+    /// unusable.
+    ///
+    /// `min_satellite_lock` corresponds to satellite lock threshold and should be
+    /// at least 2 to ensure returned points have logged a position
+    /// that is in the vicinity of the camera.
+    ///
+    /// Valid values are:
+    /// - 0 (no lock)
+    /// - 2 (2D lock)
+    /// - 3 (3D lock)
+    ///
+    /// On Hero 10 and earlier (`GPS5` devices) this is logged
+    /// in `GPSF`. For Hero11 and later the value in `GPS9`
+    /// should be used.
+    ///
+    /// `max_dilution_of_precision` corresponds to [dilution of precision](https://en.wikipedia.org/wiki/Dilution_of_precision_(navigation)) threshold.
+    /// For Hero10 and earlier (`GPS5` devices) this is logged in `GPSP`.
+    /// For Hero11 and later the value in `GPS9` should be used.
+    /// A value value below 5 (or unscaled 500) can be considered good.
     pub fn prune_mut(&mut self, min_fix: Option<u32>, max_dop: Option<f64>) -> usize {
         let len1 = self.len();
         let fix = min_fix.unwrap_or(u32::MIN); // set to 0 to let all pass through
@@ -147,16 +162,40 @@ impl Gps {
         let len2 = self.len();
         return len1 - len2;
     }
-    fn prune_mut_old(&mut self, min_fix: u32, max_dop: Option<f64>) -> usize {
-        let len1 = self.len();
-        self.0.retain(|p| match max_dop {
-            Some(dop) => {
-                (p.dop < dop) && (p.fix >= min_fix)
-            }
-            None => p.fix >= min_fix
-        });
-        let len2 = self.len();
-        return len1 - len2;
+
+    /// Returns tuples representing 2D
+    /// bounding box.
+    fn bounds(&self) -> Option<[(f64, f64); 4]> {
+        if !self.is_empty() {
+            let mut lat_min = self.first().map(|p| p.latitude)?;
+            let mut lat_max = self.first().map(|p| p.latitude)?;
+            let mut lon_min = self.first().map(|p| p.longitude)?;
+            let mut lon_max = self.first().map(|p| p.longitude)?;
+
+            self.iter().skip(1)
+                .for_each(|p| {
+                    if p.latitude > lat_max {
+                        lat_max = p.latitude
+                    }
+                    if p.latitude < lat_min {
+                        lat_min = p.latitude
+                    }
+                    if p.longitude > lon_max {
+                        lon_max = p.longitude
+                    }
+                    if p.longitude < lon_min {
+                        lon_min = p.longitude
+                    }
+                });
+
+            return Some([
+                (lat_min, lon_min),
+                (lat_min, lon_max),
+                (lat_max, lon_min),
+                (lat_max, lon_max),
+            ])
+        }
+        None
     }
 }
 

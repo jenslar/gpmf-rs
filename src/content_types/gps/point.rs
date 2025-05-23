@@ -33,7 +33,7 @@ pub struct GoProPoint {
 
 impl Default for GoProPoint {
     fn default() -> Self {
-        Self { 
+        Self {
             latitude: f64::default(),
             longitude: f64::default(),
             altitude: f64::default(),
@@ -78,7 +78,7 @@ impl std::fmt::Display for GoProPoint {
 //     /// to `GoProPoint`.
 //     /// Expects order to be `(GPS, SCALE)`.
 //     fn from(value: (&[f64], &[f64])) -> Vec<Self> {
-        
+
 //         Vec::new()
 //     }
 // }
@@ -88,7 +88,7 @@ impl GoProPoint {
     /// Generates a point from two slices: one slice contains raw GPS data
     /// from either a `GPS5` (5 value array) or a `GPS9` (9 value array) cluster,
     /// the other slice contains scaling values.
-    /// 
+    ///
     /// For `GPS5` devices `dop` (dilution of precision) is stored in `GPSP`,
     /// and `fix` in `GPSF` and have to be specified separately
     fn from_raw(
@@ -161,9 +161,9 @@ impl GoProPoint {
     /// For Hero10 and earlier models. These log at 18Hz.
     /// Returns a linear average of the point cluster in the specified DEVC stream.
     /// GPS5 devices log datetime, GPS fix, GPS dop once for the whole cluster.
-    /// 
+    ///
     /// Stream name (`STNM`): "GPS (Lat., Long., Alt., 2D speed, 3D speed)".
-    /// 
+    ///
     /// Note: For those who record while moving at very high velocities,
     /// a latitude dependent average could be implemented in a future release.
     pub fn from_gps5(devc_stream: &Stream) -> Option<Self> {
@@ -257,7 +257,7 @@ impl GoProPoint {
     /// For Hero11 and later models. These log at 10Hz.
     /// Returns the point cluster in the specified DEVC stream.
     /// GPS9 devices log datetime, GPS fix, GPS dop individually for each point.
-    /// 
+    ///
     /// Stream name (`STNM`): "GPS (Lat., Long., Alt., 2D, 3D, days, secs, DOP, fix)"
     pub fn from_gps9(devc_stream: &Stream) -> Option<Vec<Self>> {
         // GPS9 contains more info than GPS5, including datetime per-point,
@@ -286,7 +286,7 @@ impl GoProPoint {
         // let dt0 = points.first()?.datetime;
         // points.iter_mut()
         //     .for_each(|p| p.time = t0 + (p.datetime - dt0));
-        
+
         if let Some(ts) = devc_stream.time.as_ref() {
             let t0 = ts.relative;
             let dt0 = points.first()?.datetime;

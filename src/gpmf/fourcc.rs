@@ -5,8 +5,6 @@
 
 use std::io::{Read, BufRead, Seek};
 
-use binrw::BinRead;
-
 use crate::GpmfError;
 
 /// FourCC enum. Descriptions lifted from official GPMF documentation (<https://github.com/gopro/gpmf-parser>)
