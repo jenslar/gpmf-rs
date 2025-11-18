@@ -6,7 +6,7 @@ use binrw::{BinRead, BinReaderExt, BinResult};
 use time::{format_description, PrimitiveDateTime};
 
 use super::Header;
-use crate::{gopro::Dvid, FourCC, GpmfError};
+use crate::{DeviceId, FourCC, GpmfError};
 
 /// The core data type/wrapper for GPMF data types.
 /// `Vec<T>` was chosen as inner value over `T` for (possibly misguided)
@@ -100,13 +100,11 @@ impl Value {
     ///
     /// This yields `12 / std::mem::size_of::<u32>() = 3`,
     /// i.e. one array with 3 `u32` values: `[1_u32, 2_u32, 3_u32]`
-    // fn read<T>(
     fn read<T, R: Read + BufRead + Seek>(
         reader: &mut R,
         header: &Header,
     ) -> BinResult<Vec<T>>
         where
-            // R: BinRead + Read + Seek,
             T: BinRead,
             <T as BinRead>::Args<'static>: Sized + Clone + Default
     {
@@ -119,8 +117,8 @@ impl Value {
         // Below fails with
         // "BinReadError(Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })"
         // indicates corrupt data or implementation error?
-        // IMPL ERROR header.repeats contain weird values...
-        // using repeats yields very different result compared to using size_of above???
+        // IMPL ERROR header.repeats contains weird values...
+        // using repeats yields very different result compared to using size_of above?
         // header implementation incorrect?
         // let range2 = 0..header.repeats as usize;
         // let range = 0 .. header.repeats as usize - 1;
@@ -132,7 +130,6 @@ impl Value {
 
     /// Reads and maps ISO8859-1 single-byte values to a UTF-8 string.
     /// Ignores `null` characters.
-    // fn from_iso8859_1(reader: &mut BufReader<File>, header: &Header) -> Result<String, GpmfError> {
     fn from_iso8859_1<R: Read + BufRead + Seek>(reader: &mut R, header: &Header) -> Result<String, GpmfError> {
         let bytes = Self::read::<u8, R>(reader, header)?;
         Ok(bytes
@@ -142,8 +139,6 @@ impl Value {
     }
 
     /// Read and map byte values to a string if these correspond to valid UTF-8.
-    // fn from_utf8(reader: &mut BufReader<File>, header: &Header) -> Result<String, GpmfError> {
-    // fn from_utf8<R: Read + BufRead + Seek>(reader: &mut R, header: &Header) -> Result<String, GpmfError> {
     fn from_utf8<R: Read + BufRead + Seek>(reader: &mut R, header: &Header) -> Result<String, GpmfError> {
         let bytes = Self::read::<u8, R>(reader, header)?;
         String::from_utf8(bytes).map_err(|e| e.into())
@@ -159,11 +154,6 @@ impl Value {
     /// > The cursor position must always be 32-aligned before
     /// > reading GPMF data into another `Stream`, but NOT
     /// > between reading multiple `Value`s inside the same `Stream`.
-    // pub(crate) fn new(
-    //     reader: &mut BufReader<File>,
-    //     header: &Header,
-    //     complextype: Option<&str>,
-    // pub(crate) fn new<R: Read + BufRead + Seek>(
     pub(crate) fn new<R: Read + BufRead + Seek>(
         reader: &mut R,
         header: &Header,
@@ -251,7 +241,6 @@ impl Value {
             Self::Uint64(v) => v,
             Self::Float64(v) => v,
             Self::Qint64(v) => v,
-            // Self::Complex(c) => c.iter().map(|b| b.value()),
             Self::Complex(c) => c,
             Self::Compressed(c) => c,
             v @ Self::Nested => v,
@@ -279,11 +268,11 @@ impl Into<Option<String>> for &Value {
     }
 }
 
-impl Into<Option<Dvid>> for &Value {
-    fn into(self) -> Option<Dvid> {
+impl Into<Option<DeviceId>> for &Value {
+    fn into(self) -> Option<DeviceId> {
         match self {
-            Value::Uint32(d) => Some(Dvid::Uint32(d.first().map(|v| *v)?)),
-            Value::FourCC(d) => Some(Dvid::FourCC(FourCC::from_str(d))),
+            Value::Uint32(d) => Some(DeviceId::Uint32(d.first().map(|v| *v)?)),
+            Value::FourCC(d) => Some(DeviceId::FourCC(FourCC::from_str(d))),
             _ => None,
         }
     }

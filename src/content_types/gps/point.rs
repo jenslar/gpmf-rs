@@ -2,7 +2,7 @@ use time::{PrimitiveDateTime, macros::datetime, ext::NumericalDuration, Duration
 use crate::{FourCC, Stream, GpmfError, content_types::primitivedatetime_to_string};
 
 /// Point derived from GPS data stream.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GoProPoint {
     /// Latitude.
     pub latitude: f64,

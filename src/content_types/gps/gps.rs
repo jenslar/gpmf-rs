@@ -7,7 +7,7 @@ use crate::content_types::primitivedatetime_to_string;
 use super::GoProPoint;
 
 /// Gps point cluster, converted from `GPS5` or `GPS9`.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Gps(Vec<GoProPoint>);
 
 impl Gps {

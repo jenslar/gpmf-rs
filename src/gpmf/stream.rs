@@ -1,6 +1,6 @@
-//! Core data structure for GPMF streams, containing either more streams or raw values.
+//! Core data structure for GPMF streams, containing either more streams or data values.
 //! All data streams in GPMF are represented by a `Stream`, whether e.g. a `DEVC` (nested, top-level container)
-//! or the newer `GPS9` (one of the "terminal" nodes containing the actual values) containing logged GPS data.
+//! or the newer `GPS9` (a "terminal" node that contains the actual values) containing logged GPS data.
 //!
 //! One GoPro MP4 file contains multiple `DEVC` containers, each holding roughly one second of
 //! data for every kind of data the camera logs.
@@ -16,7 +16,7 @@
 
 use std::io::{Seek, SeekFrom, Read, BufRead};
 
-use crate::{DataType, GpmfError, gopro::Dvid};
+use crate::{DataType, GpmfError, DeviceId};
 use super::{FourCC, Header, Value, Timestamp};
 
 /// Core struct that preserves the GPMF structure.
@@ -45,9 +45,11 @@ pub enum StreamType {
 
 impl Stream {
     /// Create new GPMF `Stream` from a reader, e.g. a
-    /// `BufReader` over an MP4-file. Read limit in bytes
+    /// `BufReader` over an MP4-file. `read_limit` in bytes
     /// must be manually set to represent the size of
-    /// the GPMF stream.
+    /// the GPMF stream. The function recurses and
+    /// updates `read_limit` dynamically to represent
+    /// the size of the chunk being parsed.
     ///
     /// Some GoPro devices generate more than one stream
     /// for each chunk, hence returning `Vec<Stream>`,
@@ -61,7 +63,7 @@ impl Stream {
     ) -> Result<Vec<Self>, GpmfError> {
 
         // Type definitions (BaseType::TYPE) for BaseType::COMPLEX.
-        // 'TYPE' must precede 'COMPLEX'. E.g. TYPE = "cF" results in
+        // 'TYPE' must always precede 'COMPLEX' (the GPMF type `?`). E.g. TYPE = "cF" results in
         // BaseType::COMPLEX(Vec<BaseType::ASCII(_), BaseType::FOURCC(_)).
         let mut complex: Option<String> = None;
 
@@ -135,7 +137,6 @@ impl Stream {
                         streams: StreamType::Values(values),
                         time: None
                     })
-
                 }
             }
 
@@ -483,18 +484,16 @@ impl Stream {
     /// Returns Device ID (`DVID` stream) if input Stream is a `DEVC` container, or `DVID` stream.
     /// If you want to search for Device ID starting from an arbitrary `Stream`, try
     /// `Stream::find(&FourCC::DVID)` instead.
-    pub fn device_id(&self) -> Option<Dvid> {
+    pub fn device_id(&self) -> Option<DeviceId> {
         match &self.fourcc() {
             FourCC::DVID => {
                 self.first_value()
                     .and_then(|b| b.into())
-                    // .and_then(|b| b.to_owned().into())
             }
             FourCC::DEVC => {
                 self.find(&FourCC::DVID)
                     .and_then(|f| f.first_value())
                     .and_then(|b| b.into())
-                    // .and_then(|b| b.to_owned().into())
             }
             _ => None,
         }

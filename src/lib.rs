@@ -44,6 +44,7 @@ mod content_types;
 mod gopro;
 mod constants;
 mod types;
+mod tests;
 
 pub use gpmf::{
     Gpmf,
@@ -55,8 +56,6 @@ pub use gpmf::{
 pub use content_types::{DataType,Gps, GoProPoint};
 pub use content_types::sensor::{SensorData, SensorType};
 pub use errors::GpmfError;
-pub use gopro::GoProFile;
-pub use gopro::GoProSession;
-pub use gopro::DeviceName;
+pub use gopro::{GoProFile, GoProSession, DeviceId, DeviceName};
 pub use constants::{*};
 pub use types::{Muid, Gumi};

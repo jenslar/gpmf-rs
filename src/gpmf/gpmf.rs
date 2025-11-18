@@ -43,7 +43,7 @@ use time::macros::datetime;
 use time::PrimitiveDateTime;
 
 use super::{FourCC, Stream, Timestamp};
-use crate::{gopro::Dvid, DataType, GoProPoint, GpmfError, Gps};
+use crate::{DeviceId, DataType, GoProPoint, GpmfError, Gps};
 use crate::{DeviceName, SensorData, SensorType, StreamType, GOPRO_METADATA_HANDLER};
 
 /// Core GPMF struct.
@@ -479,7 +479,7 @@ impl Gpmf {
     }
 
     /// Device ID. Extracted from first `Stream`.
-    pub fn device_id(&self) -> Option<Dvid> {
+    pub fn device_id(&self) -> Option<DeviceId> {
         self.streams.first().and_then(|s| s.device_id())
     }
 

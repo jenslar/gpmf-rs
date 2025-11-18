@@ -91,20 +91,8 @@ impl Timestamp {
     /// for the GPMF track (`GoPro MET`).
     pub fn add(&self, other: &Self) -> Self {
         Self {
-            // relative: self.relative + other.relative,
             relative: self.relative + other.relative + other.duration, // need duration as well
             ..self.to_owned()
         }
     }
-
-    // Removed subtraction since it's not clear in what situation this is needed or how it should be implemented
-    // /// Substracts one `Timestamp` from another and returns the resulting `Timestamp`.
-    // /// Only modifies the `relative` field.
-    // pub fn sub(&self, timestamp: &Self) -> Self {
-    //     Self {
-    //         // relative: self.relative - timestamp.relative,
-    //         relative: self.relative - timestamp.relative - timestamp.duration, // doesnt make sense
-    //         ..self.to_owned()
-    //     }
-    // }
 }

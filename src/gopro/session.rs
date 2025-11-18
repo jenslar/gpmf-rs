@@ -11,7 +11,7 @@ use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterato
 use time::{Duration, PrimitiveDateTime};
 use walkdir::WalkDir;
 
-use crate::{files::{filename_startswith, has_extension}, DeviceName, Gpmf, GpmfError};
+use crate::{DeviceName, Gpmf, GpmfError, Gps, SensorData, SensorType, files::{filename_startswith, has_extension}};
 
 use super::{GoProFile, GoProMeta};
 
@@ -97,7 +97,7 @@ impl GoProSession {
     pub fn basename(&self) -> Option<String> {
         let path = self
             .first()
-            .and_then(|gp| gp.mp4.as_deref().or_else(|| gp.lrv.as_deref()));
+            .and_then(|gp| gp.path_high.as_deref().or_else(|| gp.path_low.as_deref()));
 
         if let Some(p) = path {
             p.file_stem().map(|s| s.to_string_lossy().to_string())
@@ -151,6 +151,26 @@ impl GoProSession {
         Ok(bytes)
     }
 
+    /// Extracts the GPS log.
+    ///
+    /// If you need to extract multiple
+    /// kinds of data it is usually better to
+    /// run `GoProSession::gpmf()` and use
+    /// the `.gps()` method on that instead.
+    pub fn gps(&self) -> Result<Gps, GpmfError> {
+        Ok(self.gpmf()?.gps())
+    }
+
+    /// Extracts specified sensor data.
+    ///
+    /// If you need to extract multiple
+    /// kinds of data it is usually better to
+    /// run `GoProSession::gpmf()` and use
+    /// the `.sensor()` method on that instead.
+    pub fn sensor(&self, sensor_type: &SensorType) -> Result<Vec<SensorData>, GpmfError> {
+        Ok(self.gpmf()?.sensor(sensor_type))
+    }
+
     /// Extracts custom user data in MP4 `udta`
     /// atom for all clips. GoPro models later than
     /// Hero5 Black embed an undocumented
@@ -173,35 +193,55 @@ impl GoProSession {
 
     /// Returns paths to high-resolution MP4-clips if set (`.MP4`),
     /// skipping `GoProFile`s that have no path set.
+    #[deprecated(since="0.5.3", note="please use `paths_high` instead")]
     pub fn mp4(&self) -> Vec<PathBuf> {
         self
             .iter()
-            .filter_map(|f| f.mp4.to_owned())
+            .filter_map(|f| f.path_high.to_owned())
+            .collect()
+    }
+
+    /// Returns paths to high-resolution MP4-clips if set (`.MP4`),
+    /// skipping `GoProFile`s that have no path set.
+    pub fn paths_high(&self) -> Vec<PathBuf> {
+        self
+            .iter()
+            .filter_map(|f| f.path_high.to_owned())
             .collect()
     }
 
     /// Returns paths to low-resolution MP4-clips if set (`.LRV`),
     /// skipping `GoProFile`s that have no path set.
+    #[deprecated(since="0.5.3", note="please use `paths_low` instead")]
     pub fn lrv(&self) -> Vec<PathBuf> {
         self
             .iter()
-            .filter_map(|f| f.lrv.to_owned())
+            .filter_map(|f| f.path_low.to_owned())
+            .collect()
+    }
+
+    /// Returns paths to low-resolution MP4-clips if set (`.LRV`),
+    /// skipping `GoProFile`s that have no path set.
+    pub fn paths_low(&self) -> Vec<PathBuf> {
+        self
+            .iter()
+            .filter_map(|f| f.path_low.to_owned())
             .collect()
     }
 
     /// Returns `true` if paths are set for all high-resolution clips in session.
-    pub fn matched_lo(&self) -> bool {
-        !self.iter().any(|gp| gp.lrv.is_none())
+    pub fn matched_low(&self) -> bool {
+        !self.iter().any(|gp| gp.path_low.is_none())
     }
 
     /// Returns `true` if paths are set for all low-resolution clip in session.
-    pub fn matched_hi(&self) -> bool {
-        !self.iter().any(|gp| gp.mp4.is_none())
+    pub fn matched_high(&self) -> bool {
+        !self.iter().any(|gp| gp.path_high.is_none())
     }
 
-    pub fn offsets(&self) {
-        // let mp4 = self.0
-    }
+    // pub fn offsets(&self) {
+    //     // let mp4 = self.0
+    // }
 
     /// Sort clips chronologically by `GoProFile::time_first_frame`.
     ///
@@ -217,11 +257,18 @@ impl GoProSession {
     }
 
     /// Sort GoPro clips in session based on filename.
+    ///
     /// Presumes clips are named to represent chronological order
     /// (GoPro's own file naming convention works).
+    ///
+    /// Note that is usually not necessary and may
+    /// result in incorrect chronological order. A `GoProSession`
+    /// will already be sorted chronologically, presuming
+    /// the model is supported. `sort_filename` is there as
+    /// a backup for unsupported models.
     pub fn sort_filename(&self) -> Result<Self, GpmfError> {
         // Ensure all paths are set for at least one resolution
-        let sort_on_hi = match (self.matched_hi(), self.matched_lo()) {
+        let sort_on_hi = match (self.matched_high(), self.matched_low()) {
             (true, _) => true,
             (false, true) => false,
             (false, false) => return Err(GpmfError::PathNotSet),
@@ -229,9 +276,9 @@ impl GoProSession {
         let mut files = self.0.to_owned();
         files.sort_by_key(|gp| {
             if sort_on_hi {
-                gp.mp4.to_owned().unwrap() // checked that path is set above
+                gp.path_high.to_owned().unwrap() // checked that path is set above
             } else {
-                gp.lrv.to_owned().unwrap() // checked that path is set above
+                gp.path_low.to_owned().unwrap() // checked that path is set above
             }
         });
 
@@ -284,11 +331,11 @@ impl GoProSession {
     /// I.e. this function is not intended to be a "find all GoPro files",
     /// only "find and group unique GoPro files".
     ///
-    /// `verify_gpmf` does a full parse on each GoPro file, and discards
+    /// `verify_gpmf` does a full parse on each GoPro file, and ignores
     /// corrupt ones.
     ///
     /// > Note: Silently skips MP4/LRV-files if filename starts with `._`
-    /// > These are `AppleDouble` files, which so far only contains
+    /// > These are `AppleDouble` files, which so far only contain
     /// > quarantine attributes and regardless are not structured
     /// > as an MP4-file.
     pub fn sessions_from_path(
@@ -368,7 +415,12 @@ impl GoProSession {
                         continue;
                     }
                     match gp.device {
-                        DeviceName::Hero11Black => {
+                        // Hero12? Hero13? Assuming 12+13 work
+                        // in the same way as 10 + 11.
+                        DeviceName::Hero10Black // 251028, works.
+                        | DeviceName::Hero11Black
+                        | DeviceName::Hero12Black // not confirmed
+                        | DeviceName::Hero13Black => {  // not confirmed
                             if gp.muid != gp_session.muid {
                                 continue;
                             }
@@ -381,13 +433,12 @@ impl GoProSession {
                     }
                 }
 
-                // `set_path()` sets MP4 or LRV path based on file extension
+                // Merges paths from two GoProFiles
+                // in cases where these are not complete.
                 hash2gopro
                     .entry(gp.fingerprint.to_owned())
                     .or_insert(gp.clone())
                     .merge(&gp)?;
-                    // .set_path(&path);
-                // }
             }
         }
 
@@ -403,10 +454,12 @@ impl GoProSession {
         // let mut gumi2gopro: HashMap<Vec<u8>, Vec<GoProFile>> = HashMap::new();
         let mut gumi2gopro: HashMap<[u32; 4], Vec<GoProFile>> = HashMap::new();
         for (_, gp) in hash2gopro.iter() {
+            // println!("{}", gp.device);
             match gp.device {
-                // Hero 11 uses the same MUID for clips in the same session.
+                // Hero 10+11 uses the same MUID for clips in the same session.
                 // Currently an assumption that so do Hero 12 and Hero 13.
-                DeviceName::Hero11Black
+                DeviceName::Hero10Black // 251028
+                | DeviceName::Hero11Black
                 | DeviceName::Hero12Black
                 | DeviceName::Hero13Black => muid2gopro
                     .entry(gp.muid.to_owned())
@@ -467,16 +520,15 @@ impl GoProSession {
         // 2. Group files on MUID or GUMI depending on model
 
         // Group clips with the same full MUID ([u32; 8])
-        // let mut muid2gopro: HashMap<Vec<u32>, Vec<GoProFile>> = HashMap::new();
         let mut muid2gopro: HashMap<[u32; 8], Vec<GoProFile>> = HashMap::new();
         // Group clips with the same full GUMI ([u8; 16]) reading as [u32; 4]
-        // let mut gumi2gopro: HashMap<Vec<u8>, Vec<GoProFile>> = HashMap::new();
         let mut gumi2gopro: HashMap<[u32; 4], Vec<GoProFile>> = HashMap::new();
         for (_, gp) in hash2gopro.iter() {
             match gp.device {
-                // Hero 11 uses the same MUID for clips in the same session.
+                // Hero 10+11 use the same MUID for clips in the same session.
                 // Currently an assumption that so do Hero 12 and Hero 13.
-                DeviceName::Hero11Black
+                DeviceName::Hero10Black // 251028
+                | DeviceName::Hero11Black
                 | DeviceName::Hero12Black
                 | DeviceName::Hero13Black => muid2gopro
                     .entry(gp.muid.to_owned())
@@ -487,21 +539,8 @@ impl GoProSession {
                     .entry(gp.gumi.to_owned())
                     .or_insert(Vec::new())
                     .push(gp.to_owned()),
-                // // Hero 11 uses the same MUID for clips in the same session.
-                // DeviceName::Hero11Black => muid2gopro
-                //     .entry(gp.muid.to_owned())
-                //     .or_insert(Vec::new())
-                //     .push(gp.to_owned()),
-                // // Hero7 uses GUMI. Others unknown, GUMI is a pure guess.
-                // _ => gumi2gopro
-                //     .entry(gp.gumi.to_owned())
-                //     .or_insert(Vec::new())
-                //     .push(gp.to_owned()),
             };
         }
-
-        // println!("MUID {muid2gopro:#?}");
-        // println!("GUMI {gumi2gopro:#?}");
 
         if verbose {
             println!("Compiling and sorting sessions...")
@@ -534,29 +573,22 @@ impl GoProSession {
 
     pub fn start(&self) -> Option<PrimitiveDateTime> {
         self.first()
-            // .map(|f| f.creation_time)
             .map(|f| f.start())
     }
 
     pub fn end(&self) -> Option<PrimitiveDateTime> {
-        // Some(self.start()? + self.duration().ok()?)
         Some(self.start()? + self.duration())
     }
 
     /// Returns duration of session.
-    // pub fn duration(&self) -> Result<Duration, GpmfError> {
     pub fn duration(&self) -> Duration {
         self.iter().map(|g| g.duration()).sum()
     }
 
     /// Returns duration of session as milliseconds.
-    // pub fn duration_ms(&self) -> Result<i64, GpmfError> {
     pub fn duration_ms(&self) -> i128 {
-        // self.duration()?
         self.duration()
             .whole_milliseconds()
-            // .try_into()
-            // .map_err(|err| GpmfError::DowncastIntError(err))
     }
 
     pub fn part_of(&self, gopro: &GoProFile) -> bool {

@@ -53,8 +53,6 @@ impl Header {
     /// becomes structure size X (byte length of utf-8 string), repeat 1, e.g. for older devices:
     /// `['G'] ['y'] ['r'] ['o']`, will instead be parsed into `['G', 'y', 'r', 'o']` -> String "Gyro".
     /// This is also true for Huffman encoded data loads, but these are currently not supported.
-    // pub fn new(reader: &mut BufReader<File>) -> Result<Self, GpmfError> {
-    // pub fn new<R: Read + BufRead + Seek>(reader: &mut R) -> Result<Self, GpmfError> {
     pub fn new<R: Read + BufRead + Seek>(reader: &mut R) -> Result<Self, GpmfError> {
         let fourcc = FourCC::new(reader)?;
 

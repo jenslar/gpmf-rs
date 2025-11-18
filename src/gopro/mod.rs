@@ -11,5 +11,5 @@ pub use filetype::GoProFileType;
 pub use file::GoProFile;
 pub use session::GoProSession;
 pub use meta::GoProMeta;
-pub use device_id::Dvid;
+pub use device_id::DeviceId;
 pub use device_name::DeviceName;

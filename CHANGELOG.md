@@ -1,3 +1,8 @@
+# v0.5.3
+- FIX: Correctly identifies Hero 10 Black clips in the same recording session (`MUID`/`GUID` check). Temporarily added Hero 12 + 13 to use the same clip identification method as Hero 10 + Hero 11, but this is untested.
+- NEW: Added convenience methods `GoProSession::gps()`, `GoProSession::sensor()`. Note that these will read directly from disk each time. If you need multiple data types it may be faster to instead run `GoProSession::gpmf()` which creates in-memory GPMF data, then use the appropriate extraction methods on that.
+- BREAKING: Changed the fields `GoProFile::mp4` (high-res video) and `GoProFile::lrv` (low-res video) to the more descriptive `GoProFile::video_high` and `GoProFile::video_low`.
+
 # v0.5.2
 - FIX (or BREAKING): `GoProSession::sessions_from_path()` now silently skips any MP4/LRV-file if file name starts with `._`. On macOS these so far contain only quarantine attributes and are regardless not valid MP4-files.
 - Bumped crate versions.

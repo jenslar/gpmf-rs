@@ -20,14 +20,7 @@ use time::{
 };
 
 use crate::{
-    files::fileext_to_lcstring,
-    types::{Gumi, Muid},
-    DeviceName,
-    Gpmf,
-    GpmfError,
-    GOPRO_METADATA_HANDLER,
-    GOPRO_MIN_WIDTH_HEIGHT,
-    GOPRO_TIMECODE_HANDLER
+    DeviceName, GOPRO_METADATA_HANDLER, GOPRO_MIN_WIDTH_HEIGHT, GOPRO_TIMECODE_HANDLER, Gpmf, GpmfError, Gps, SensorData, SensorType, files::fileext_to_lcstring, types::{Gumi, Muid}
 };
 
 use super::{GoProMeta, GoProFileType};
@@ -73,10 +66,10 @@ pub struct GoProFile {
     /// and present GPMF data may differ
     /// depending on model.
     pub device: DeviceName,
-    /// High resolution MP4 (`.MP4`)
-    pub mp4: Option<PathBuf>,
-    /// Low resolution MP4 (`.LRV`)
-    pub lrv: Option<PathBuf>,
+    /// High resolution MP4 (usually `.MP4` on microSD)
+    pub path_high: Option<PathBuf>,
+    /// Low resolution MP4 (usually `.LRV` on microSD)
+    pub path_low: Option<PathBuf>,
     /// Media Unique ID.
     pub muid: Muid,
     /// Global Unique ID.
@@ -142,9 +135,9 @@ impl GoProFile {
         // let _filetype = gopro.set_path(path);
         // Attempt at filename independent high/low res clip check
         if (width, height) < GOPRO_MIN_WIDTH_HEIGHT {
-            gopro.lrv = Some(path.to_path_buf())
+            gopro.path_low = Some(path.to_path_buf())
         } else {
-            gopro.mp4 = Some(path.to_path_buf())
+            gopro.path_high = Some(path.to_path_buf())
         }
 
         // MUID, GUMI determined from udta
@@ -157,7 +150,9 @@ impl GoProFile {
         Ok(gopro)
     }
 
-    pub(crate) fn merge(&mut self, other: &GoProFile) -> Result<(), GpmfError>{
+    /// Attempts to complete paths and using another `GoProFile`.
+    /// For internal use.
+    pub(crate) fn merge(&mut self, other: &GoProFile) -> Result<(), GpmfError> {
         // !!! more complete field comparison before release
         if self == other {
             // do nothing if files are equal
@@ -169,12 +164,12 @@ impl GoProFile {
         if other.gumi != [0, 0, 0, 0] {
             self.gumi = other.gumi
         }
-        match (&other.mp4, &other.lrv) {
-            (Some(hi), None) => self.mp4 = Some(hi.to_owned()),
-            (None, Some(low)) => self.lrv = Some(low.to_owned()),
+        match (&other.path_high, &other.path_low) {
+            (Some(hi), None) => self.path_high = Some(hi.to_owned()),
+            (None, Some(low)) => self.path_low = Some(low.to_owned()),
             (Some(hi), Some(low)) => {
-                self.mp4 = Some(hi.to_owned());
-                self.lrv = Some(low.to_owned());
+                self.path_high = Some(hi.to_owned());
+                self.path_low = Some(low.to_owned());
             },
             _ => return Err(GpmfError::PathNotSet),
         }
@@ -207,12 +202,12 @@ impl GoProFile {
     /// Get video path.
     /// Prioritizes high-resolution video.
     pub fn path(&self) -> Result<&Path, GpmfError> {
-        if self.mp4.is_some() {
-            self.mp4.as_deref()
-                .ok_or(GpmfError::HighResVideoNotSet)
+        if let Some(hi) = self.path_high.as_deref() {
+            Ok(hi)
+        } else if let Some(low) = self.path_low.as_deref() {
+            Ok(low)
         } else {
-            self.lrv.as_deref()
-                .ok_or(GpmfError::LowResVideoNotSet)
+            Err(GpmfError::PathNotSet)
         }
     }
 
@@ -280,8 +275,8 @@ impl GoProFile {
     }
 
     /// Size of high-resolution clip (`.MP4`) in bytes.
-    pub fn size_mp4(&self) -> Result<u64, GpmfError> {
-        Ok(self.mp4
+    pub fn size_high(&self) -> Result<u64, GpmfError> {
+        Ok(self.path_high
             .as_deref()
             .ok_or(GpmfError::HighResVideoNotSet)?
             .metadata()?
@@ -290,8 +285,8 @@ impl GoProFile {
     }
 
     /// Size of low-resolution clip (`.LRV`) in bytes.
-    pub fn size_lrv(&self) -> Result<u64, GpmfError> {
-        Ok(self.lrv
+    pub fn size_low(&self) -> Result<u64, GpmfError> {
+        Ok(self.path_low
             .as_deref()
             .ok_or(GpmfError::LowResVideoNotSet)?
             .metadata()?
@@ -304,11 +299,11 @@ impl GoProFile {
     pub fn set_path(&mut self, path: &Path) -> GoProFileType {
         match fileext_to_lcstring(path).as_deref() {
             Some("mp4") => {
-                self.mp4 = Some(path.to_owned());
+                self.path_high = Some(path.to_owned());
                 GoProFileType::High
             },
             Some("lrv") => {
-                self.lrv = Some(path.to_owned());
+                self.path_low = Some(path.to_owned());
                 GoProFileType::Low
             },
             _ => GoProFileType::Any
@@ -347,14 +342,14 @@ impl GoProFile {
         Ok(atom.read_data()?)
     }
 
-    /// Returns an `mp4iter::Mp4` object for the specified filetype:
+    /// Returns an `mp4iter::Mp4` reader object for the specified filetype:
     /// - `GoProFileType::High` = high-resolution clip
     /// - `GoProFileType::Low` = low-resolution clip
     /// - `GoProFileType::Any` = either, prioritizing high-resolution clip
-    pub fn mp4(&self, filetype: GoProFileType) -> Result<mp4iter::Mp4, GpmfError> {
+    pub fn reader(&self, filetype: GoProFileType) -> Result<mp4iter::Mp4, GpmfError> {
         let path = match filetype {
-            GoProFileType::High => self.mp4.as_ref().ok_or_else(|| GpmfError::PathNotSet)?,
-            GoProFileType::Low => self.lrv.as_ref().ok_or_else(|| GpmfError::PathNotSet)?,
+            GoProFileType::High => self.path_high.as_ref().ok_or_else(|| GpmfError::PathNotSet)?,
+            GoProFileType::Low => self.path_low.as_ref().ok_or_else(|| GpmfError::PathNotSet)?,
             GoProFileType::Any => self.path()?,
         };
 
@@ -395,10 +390,20 @@ impl GoProFile {
         Gpmf::from_cursor(&mut cursor, false)
     }
 
-    /// Export GPMF uninterpreted.
+    /// Dump GPMF data as raw bytes.
     pub fn gpmf_raw(&self) -> Result<Vec<u8>, GpmfError> {
         let path = self.path()?;
         Gpmf::export_raw(path)
+    }
+
+    /// Extracts the GPS log.
+    pub fn gps(&self) -> Result<Gps, GpmfError> {
+        Ok(self.gpmf()?.gps())
+    }
+
+    /// Extracts specified sensor data.
+    pub fn sensor(&self, sensor_type: &SensorType) -> Result<Vec<SensorData>, GpmfError> {
+        Ok(self.gpmf()?.sensor(sensor_type))
     }
 
     /// Extract custom data in MP4 `udta` container.
@@ -489,10 +494,10 @@ impl Default for GoProFile {
     fn default() -> Self {
         Self {
             device: DeviceName::default(),
-            mp4: None,
+            path_high: None,
             // muid_mp4: [0; 8],
             // gumi_mp4: [0; 4],
-            lrv: None,
+            path_low: None,
             // muid_lrv: [0; 8],
             // gumi_lrv: [0; 4],
             muid: [0; 8],
