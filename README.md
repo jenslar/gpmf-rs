@@ -40,10 +40,10 @@ fn main() -> std::io::Result<()> {
     // specified, the parent dir of the clip
     // will be used.
     let dir = Path::new("PATH/TO/SOME/DIR")
-    GoProSession::from_path(&path, Some(&dir), false, false, true)?;
+    let session = GoProSession::from_path(&path, Some(&dir), false, false, true)?;
     
     // Compile GPMF data for the entire session.
-    let gpmf_session = Gpmf::new(&path, false)?;
+    let gpmf_session = session.gpmf()?;
     println!("{gpmf_session:#?}");
     
     // Then export GPS data etc as usual...
