@@ -460,8 +460,8 @@ impl GoProSession {
                 // Currently an assumption that so do Hero 12 and Hero 13.
                 DeviceName::Hero10Black // 251028
                 | DeviceName::Hero11Black
-                | DeviceName::Hero12Black
-                | DeviceName::Hero13Black => muid2gopro
+                | DeviceName::Hero12Black => muid2gopro
+                // | DeviceName::Hero13Black => muid2gopro // seems incorrect for Hero 13 but need more test data
                     .entry(gp.muid.to_owned())
                     .or_insert(Vec::new())
                     .push(gp.to_owned()),

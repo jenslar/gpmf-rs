@@ -1,3 +1,6 @@
+# v0.5.5
+- Attempt to fix for deriving clips in the same sesssion.
+
 # v0.5.4
 - Bump time crate and license year.
 
