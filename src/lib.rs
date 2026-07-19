@@ -37,24 +37,20 @@
 //! }
 //! ```
 
-pub mod gpmf;
-pub (crate) mod files;
-mod errors;
-mod content_types;
-mod gopro;
 mod constants;
+mod content_types;
+mod errors;
+pub(crate) mod files;
+mod gopro;
+pub mod gpmf;
+#[cfg(test)]
+mod tests;
 mod types;
 
-pub use gpmf::{
-    Gpmf,
-    FourCC,
-    Stream,
-    StreamType,
-    Timestamp
-};
-pub use content_types::{DataType,Gps, GoProPoint};
-pub use content_types::sensor::{SensorData, SensorType};
+pub use constants::*;
+pub use content_types::{DataType, GoProPoint, Gps};
+pub use content_types::{ImuOrientation, Imu, ImuQuantifier, ImuSample, ImuType};
 pub use errors::GpmfError;
-pub use gopro::{GoProFile, GoProSession, DeviceId, DeviceName};
-pub use constants::{*};
-pub use types::{Muid, Gumi};
+pub use gopro::{DeviceId, DeviceInfo, DeviceName, GoProFile, GoProMultiSession, GoProSession};
+pub use gpmf::{FourCC, Gpmf, Stream, StreamType, Timestamp};
+pub use types::{Gumi, Muid, Cpid};

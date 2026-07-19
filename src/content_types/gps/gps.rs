@@ -1,8 +1,11 @@
 use core::f64;
 use std::u32;
 
-use time::{Duration, PrimitiveDateTime};
-use crate::content_types::primitivedatetime_to_string;
+use spatio_types::point::TemporalPoint3D;
+use time::{Duration, OffsetDateTime};
+use crate::content_types::{
+    offsetdatetime_to_string,
+};
 
 use super::GoProPoint;
 
@@ -63,7 +66,8 @@ impl Gps {
     /// Returns the start of the GPMF stream as `PrimitiveDateTime`.
     /// Returns `None` if no points were logged or if no points with minimum
     /// level of satellite lock were logged. Defaults to 2D lock if `min_gps_fix` is `None`.
-    pub fn t0(&self, min_gps_fix: Option<u32>) -> Option<PrimitiveDateTime> {
+    // pub fn t0(&self, min_gps_fix: Option<u32>) -> Option<PrimitiveDateTime> {
+    pub fn t0(&self, min_gps_fix: Option<u32>) -> Option<OffsetDateTime> {
         let first_point = self
             .iter()
             .find(|p| p.fix >= min_gps_fix.unwrap_or(2))? // find first with satellite lock
@@ -71,7 +75,7 @@ impl Gps {
 
         Some(
             // subtract timestamp relative to video timeline from datetime
-            first_point.datetime - first_point.time,
+            first_point.datetime().ok()? - first_point.timestamp,
         )
     }
 
@@ -80,12 +84,12 @@ impl Gps {
     /// level of satellite lock were logged. Defaults to 3D lock if `min_gps_fix` is `None`.
     pub fn t0_as_string(&self, min_gps_fix: Option<u32>) -> Option<String> {
         self.t0(min_gps_fix)
-            .and_then(|t| primitivedatetime_to_string(&t).ok())
+            .and_then(|t| offsetdatetime_to_string(&t).ok())
     }
 
     pub fn t_last_as_string(&self) -> Option<String> {
         self.last()
-            .and_then(|p| primitivedatetime_to_string(&p.datetime).ok())
+            .and_then(|p| offsetdatetime_to_string(&p.datetime().ok()?).ok())
     }
 
     /// Prune points if `min_satellite_lock` is below specified value,
@@ -167,24 +171,24 @@ impl Gps {
     /// bounding box.
     fn bounds(&self) -> Option<[(f64, f64); 4]> {
         if !self.is_empty() {
-            let mut lat_min = self.first().map(|p| p.latitude)?;
-            let mut lat_max = self.first().map(|p| p.latitude)?;
-            let mut lon_min = self.first().map(|p| p.longitude)?;
-            let mut lon_max = self.first().map(|p| p.longitude)?;
+            let mut lat_min = self.first().map(|p| p.latitude())?;
+            let mut lat_max = self.first().map(|p| p.latitude())?;
+            let mut lon_min = self.first().map(|p| p.longitude())?;
+            let mut lon_max = self.first().map(|p| p.longitude())?;
 
             self.iter().skip(1)
                 .for_each(|p| {
-                    if p.latitude > lat_max {
-                        lat_max = p.latitude
+                    if p.latitude() > lat_max {
+                        lat_max = p.latitude()
                     }
-                    if p.latitude < lat_min {
-                        lat_min = p.latitude
+                    if p.latitude() < lat_min {
+                        lat_min = p.latitude()
                     }
-                    if p.longitude > lon_max {
-                        lon_max = p.longitude
+                    if p.longitude() > lon_max {
+                        lon_max = p.longitude()
                     }
-                    if p.longitude < lon_min {
-                        lon_min = p.longitude
+                    if p.longitude() < lon_min {
+                        lon_min = p.longitude()
                     }
                 });
 
@@ -197,6 +201,31 @@ impl Gps {
         }
         None
     }
+
+    #[cfg(feature = "gpx")]
+    /// Simple export to GPX 1.1.
+    pub fn to_gpx(&self) -> gpx::Gpx {
+        let mut track = gpx::Track::new();
+        let points: Vec<gpx::Waypoint> = self
+            .points()
+            .iter()
+            .map(|p| gpx::Waypoint::from(p))
+            .collect();
+        track.segments = vec![gpx::TrackSegment {points}];
+        let mut gpxout = gpx::Gpx::new(gpx::GpxVersion::Gpx11);
+        gpxout.tracks = vec![track];
+
+        gpxout
+    }
+
+    #[cfg(feature = "gpx")]
+    /// Write GPX 1.1 file.
+    pub fn write_gpx(&self, path: &std::path::Path) -> Result<(), crate::GpmfError> {
+        let gpxout = self.to_gpx();
+        let mut file = std::fs::File::create_new(path)?;
+
+        Ok(gpx::write(&gpxout, &mut file)?)
+    }
 }
 
 /// Returns a latitude dependent average coordinate for specified points.
@@ -204,13 +233,7 @@ pub(crate) fn points_average(points: &[GoProPoint]) -> Option<GoProPoint> {
     // see: https://carto.com/blog/center-of-points/ NO LONGER UP
     // atan2(y,x) where y = sum((sin(yi)+...+sin(yn))/n), x = sum((cos(xi)+...cos(xn))/n), y, i in radians
 
-    let dur_total: Duration = points.iter().map(|p| p.time).sum();
-    // let datetime_first = points.first().map(|p| p.datetime)?;
-    // let datetime_last = points.last().map(|p| p.datetime)?;
-    // let datetime_avg: PrimitiveDateTime = match points.len() {
-    //     1 => datetime_first,
-    //     _ => datetime_first + Duration::seconds_f64((datetime_last - datetime_first).as_seconds_f64() / 2.)
-    // };
+    let dur_total: Duration = points.iter().map(|p| p.timestamp).sum();
 
     let deg2rad = std::f64::consts::PI / 180.0; // inverse for radians to degress
 
@@ -224,10 +247,10 @@ pub(crate) fn points_average(points: &[GoProPoint]) -> Option<GoProPoint> {
     let mut fix: Vec<f64> = Vec::new();
 
     for pt in points.iter() {
-        lon_rad_sin.push((pt.longitude * deg2rad).sin());
-        lon_rad_cos.push((pt.longitude * deg2rad).cos());
-        lat_rad.push(pt.latitude * deg2rad); // arithmetic avg ok, only converts to radians
-        alt.push(pt.altitude);
+        lon_rad_sin.push((pt.longitude() * deg2rad).sin());
+        lon_rad_cos.push((pt.longitude() * deg2rad).cos());
+        lat_rad.push(pt.latitude() * deg2rad); // arithmetic avg ok, only converts to radians
+        alt.push(pt.altitude());
         // magnetometer is MAX cameras only
         // if let Some(h) = pt.heading {
         //     hdg.push(h)
@@ -254,26 +277,20 @@ pub(crate) fn points_average(points: &[GoProPoint]) -> Option<GoProPoint> {
     let dop_avg = average(&dop);
     let fix_avg = average(&fix);
 
+    let point2d = spatio_types::geo::Point::new(lon_avg_deg, lat_avg_deg);
+    let systemtime = points.first()?.systemtime();
+    let point_xyzt = TemporalPoint3D::new(point2d, alt_avg, systemtime.to_owned());
+
     Some(GoProPoint {
-        latitude: lat_avg_deg,
-        longitude: lon_avg_deg,
-        altitude: alt_avg,
-        // heading: hdg_avg,
+        point: point_xyzt,
         speed2d: sp2d_avg,
         speed3d: sp3d_avg,
         // Use datetime for first point in cluster to represent the start
         // of the timestamp for averaged points. (rather than average datetime)
-        datetime: points.first().map(|p| p.datetime)?,
-        // datetime: datetime_avg,
-        // timestamp: should be start of first point not average,
+        // datetime: points.first().map(|p| p.datetime)?,
+        // sum of all relative "video" timestamp durations
         // so that timestamp + duration = timespan within which all averaged points were logged
-        // timestamp: ts_first, // TODO test! hero11 then virb (remove set_timedelta for virb)
-        // timestamp: Some(time_avg), // OLD
-        // duration: should be sum of all durations
-        // so that timestamp + duration = timespan within which all averaged points were logged
-        time: dur_total, // TODO test! hero11 then virb (remove set_timedelta for virb)
-        // duration: points.first().and_then(|p| p.duration), // OLD
-        // description,
+        timestamp: dur_total, // TODO test! hero11 then virb (remove set_timedelta for virb)
         dop: dop_avg,
         fix: fix_avg as u32 // meaningless but eh...
     })

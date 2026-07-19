@@ -1,9 +1,9 @@
 //! Core structure for GPMF raw data values.
 
-use std::io::{BufRead, Read, Seek};
+use std::{io::{BufRead, Read, Seek}, time::{SystemTime, UNIX_EPOCH}};
 
 use binrw::{BinRead, BinReaderExt, BinResult};
-use time::{format_description, PrimitiveDateTime};
+use time::{Duration, PrimitiveDateTime, format_description};
 
 use super::Header;
 use crate::{DeviceId, FourCC, GpmfError};
@@ -125,12 +125,18 @@ impl Value {
 
         // println!("RANGE {range:?} | RANGE2 {range2:?}");
 
-        range.into_iter().map(|_| reader.read_be::<T>()).collect()
+        range
+            .into_iter()
+            .map(|_| reader.read_be::<T>())
+            .collect()
     }
 
     /// Reads and maps ISO8859-1 single-byte values to a UTF-8 string.
     /// Ignores `null` characters.
-    fn from_iso8859_1<R: Read + BufRead + Seek>(reader: &mut R, header: &Header) -> Result<String, GpmfError> {
+    fn from_iso8859_1<R: Read + BufRead + Seek>(
+        reader: &mut R,
+        header: &Header
+    ) -> Result<String, GpmfError> {
         let bytes = Self::read::<u8, R>(reader, header)?;
         Ok(bytes
             .iter()
@@ -139,7 +145,10 @@ impl Value {
     }
 
     /// Read and map byte values to a string if these correspond to valid UTF-8.
-    fn from_utf8<R: Read + BufRead + Seek>(reader: &mut R, header: &Header) -> Result<String, GpmfError> {
+    fn from_utf8<R: Read + BufRead + Seek>(
+        reader: &mut R,
+        header: &Header
+    ) -> Result<String, GpmfError> {
         let bytes = Self::read::<u8, R>(reader, header)?;
         String::from_utf8(bytes).map_err(|e| e.into())
     }
@@ -203,9 +212,7 @@ impl Value {
                     for t in types.as_bytes().iter() {
                         // Convert header with type `?` to header with specific type.
                         let hdr = header.convert(t);
-
                         let value = Self::new(reader, &hdr, None)?;
-
                         complex.push(Box::new(value));
                     }
 
@@ -298,6 +305,14 @@ impl Into<Option<PrimitiveDateTime>> for &Value {
     }
 }
 
+impl Into<Option<SystemTime>> for &Value {
+    fn into(self) -> Option<SystemTime> {
+        let pdt: Option<PrimitiveDateTime> = self.into();
+        let utc_nanos = pdt?.as_utc().unix_timestamp_nanos();
+        Some(UNIX_EPOCH + Duration::nanoseconds_i128( utc_nanos))
+    }
+}
+
 impl Into<Option<u16>> for &Value {
     fn into(self) -> Option<u16> {
         match self {
@@ -311,6 +326,15 @@ impl Into<Option<u32>> for &Value {
     fn into(self) -> Option<u32> {
         match self {
             Value::Uint32(n) => n.first().cloned(),
+            _ => None,
+        }
+    }
+}
+
+impl Into<Option<Vec<u32>>> for &Value {
+    fn into(self) -> Option<Vec<u32>> {
+        match self {
+            Value::Uint32(n) => Some(n.to_owned()),
             _ => None,
         }
     }

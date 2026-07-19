@@ -3,31 +3,37 @@ use std::fmt::Display;
 use crate::{DataType, DeviceName};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SensorType {
+pub enum ImuType {
     Accelerometer,
+    // AccelerometerMagnitude,
     GravityVector,
+    // GravityVectorMagnitude,
     Gyroscope,
+    // GyroscopeMagnitude,
     Unknown
 }
 
-impl Default for SensorType {
+impl Default for ImuType {
     fn default() -> Self {
         Self::Unknown
     }
 }
 
-impl Display for SensorType {
+impl Display for ImuType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SensorType::Accelerometer => write!(f, "Accelerometer"),
-            SensorType::GravityVector => write!(f, "Gravity Vector"),
-            SensorType::Gyroscope => write!(f, "Gyroscope"),
-            SensorType::Unknown => write!(f, "Unknown"),
+            ImuType::Accelerometer => write!(f, "Accelerometer"),
+            // ImuType::AccelerometerMagnitude => write!(f, "Accelerometer, magnitude"),
+            ImuType::GravityVector => write!(f, "Gravity Vector"),
+            // ImuType::GravityVectorMagnitude => write!(f, "Gravity Vector, magnitude"),
+            ImuType::Gyroscope => write!(f, "Gyroscope"),
+            // ImuType::GyroscopeMagnitude => write!(f, "Gyroscope, magnitude"),
+            ImuType::Unknown => write!(f, "Unknown"),
         }
     }
 }
 
-impl From<&str> for SensorType {
+impl From<&str> for ImuType {
     fn from(value: &str) -> Self {
         match value.to_lowercase().as_str() {
             "acc" | "accl" | "accelerometer" => Self::Accelerometer,
@@ -38,7 +44,7 @@ impl From<&str> for SensorType {
     }
 }
 
-impl SensorType {
+impl ImuType {
     /// Convert `SensorType` to `DataType`
     pub fn as_datatype(&self, device: &DeviceName) -> DataType {
         match &self {
@@ -67,19 +73,19 @@ impl SensorType {
 
     pub fn units(&self) -> &str {
         match &self {
-            SensorType::Accelerometer => "m/s²",
-            SensorType::GravityVector => "N/A",
-            SensorType::Gyroscope => "rad/s",
-            SensorType::Unknown => "N/A",
+            Self::Accelerometer => "m/s²",
+            Self::GravityVector => "N/A",
+            Self::Gyroscope => "rad/s",
+            Self::Unknown => "N/A",
         }
     }
 
     pub fn quantifier(&self) -> &str {
         match &self {
-            SensorType::Accelerometer => "Acceleration",
-            SensorType::GravityVector => "N/A",
-            SensorType::Gyroscope => "Rotation",
-            SensorType::Unknown => "N/A",
+            Self::Accelerometer => "Acceleration",
+            Self::GravityVector => "N/A",
+            Self::Gyroscope => "Rotation",
+            Self::Unknown => "N/A",
         }
     }
 }

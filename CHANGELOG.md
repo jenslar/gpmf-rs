@@ -1,8 +1,10 @@
-# v0.5.5
-- Attempt to fix for deriving clips in the same sesssion.
-
-# v0.5.4
-- Bump time crate and license year.
+# v0.6.0
+- BREAKING: `GoProSession` no longer lists both high (`.MP4`) and low-resolution (`.LRV`) clips. Instead, it will match the resolution of the input clip and ignore other resolutions.
+- NEW: `GoProSession::locate` is the new method for deriving which clips belong to the same recording session. Only clips with the same resolution as the input clip will be considered.
+- NEW: `GoProMultiSession::locate` is the new type and method to locate clips in both resolutions that belong to the same recording session.
+- NEW: Added `has_gps() -> bool` method for `GoProFile`, `GoProSession`, and  `GoProMultiSession`. Note that this reads from disk.
+- NEW: Added more models, including Hero 13 Black and Mission 1 (note that only Hero5 Black and later have GPMF support).
+- NEW: Simple GPX export/write (enable feature "gpx", and use `Gps::to_gpx()` or `Gps::write_gpx()`). Note that this is currently using a [specific commit of the github version](https://github.com/georust/gpx/tree/7ad83e33e64350c6a4893243b77bb3e474db56b5) of the GPX crate since there was no obvious way to create a a new/default `Gpx` object in version 0.10.
 
 # v0.5.3
 - FIX: Correctly identifies Hero 10 Black clips in the same recording session (`MUID`/`GUID` check). Temporarily added Hero 12 + 13 to use the same clip identification method as Hero 10 + Hero 11, but this is untested.

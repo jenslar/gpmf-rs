@@ -159,6 +159,12 @@ pub enum FourCC {
     LENS,
     /// MP4 `udta` camera (?)
     CAME,
+    /// Clip ID in `udta` GPMF section for GoPro cameras.
+    /// Session ID for Hero 13 (and later?)
+    CPID,
+    /// Clip index in `udta` GPMF section for GoPro cameras.
+    /// Order in recording session.
+    CPIN,
     /// MP4 `udta` settings (?)
     SETT,
     /// MP4 `udta` unknown
@@ -283,6 +289,8 @@ impl FourCC {
             b"CAME" => FourCC::CAME,
             b"SETT" => FourCC::SETT,
             b"AMBA" => FourCC::AMBA,
+            b"CPID" => FourCC::CPID,
+            b"CPIN" => FourCC::CPIN,
             b"MUID" => FourCC::MUID,
             b"HMMT" => FourCC::HMMT,
             b"BCID" => FourCC::BCID,
@@ -476,6 +484,8 @@ impl FourCC {
             "CAME" => FourCC::CAME,
             "SETT" => FourCC::SETT,
             "AMBA" => FourCC::AMBA,
+            "CPID" => FourCC::CPID,
+            "CPIN" => FourCC::CPIN,
             "MUID" => FourCC::MUID,
             "HMMT" => FourCC::HMMT,
             "BCID" => FourCC::BCID,
@@ -562,6 +572,8 @@ impl FourCC {
             FourCC::SETT => "SETT",
             FourCC::AMBA => "AMBA",
             FourCC::MUID => "MUID",
+            FourCC::CPID => "CPID",
+            FourCC::CPIN => "CPIN",
             FourCC::HMMT => "HMMT",
             FourCC::BCID => "BCID",
             FourCC::GUMI => "GUMI",

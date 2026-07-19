@@ -1,6 +1,7 @@
 //! GoPro GPMF data format core structs and methods.
 
 pub mod gpmf;
+pub mod mdat;
 pub mod fourcc;
 pub mod header;
 pub mod stream;

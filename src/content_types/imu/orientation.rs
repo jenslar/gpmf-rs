@@ -6,7 +6,7 @@
 /// stored according to the right-hand
 /// rule.
 #[derive(Debug, Clone)]
-pub enum Orientation {
+pub enum ImuOrientation {
     XYZ,
     XZY,
     YZX,
@@ -16,13 +16,13 @@ pub enum Orientation {
     Invalid
 }
 
-impl Default for Orientation {
+impl Default for ImuOrientation {
     fn default() -> Self {
         Self::Invalid
     }
 }
 
-impl From<&str> for Orientation {
+impl From<&str> for ImuOrientation {
     fn from(value: &str) -> Self {
         match value.to_lowercase().as_str() {
             "xyz" => Self::XYZ,

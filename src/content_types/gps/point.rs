@@ -1,15 +1,13 @@
-use time::{PrimitiveDateTime, macros::datetime, ext::NumericalDuration, Duration};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use spatio_types::{geo::Point, point::TemporalPoint3D};
+use time::{Duration, OffsetDateTime, PrimitiveDateTime, ext::NumericalDuration, macros::datetime};
 use crate::{FourCC, Stream, GpmfError, content_types::primitivedatetime_to_string};
 
 /// Point derived from GPS data stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GoProPoint {
-    /// Latitude.
-    pub latitude: f64,
-    /// Longitude.
-    pub longitude: f64,
-    /// Altitude.
-    pub altitude: f64,
+    pub(crate) point: TemporalPoint3D,
     /// 2D speed.
     pub speed2d: f64,
     /// 3D speed.
@@ -17,7 +15,7 @@ pub struct GoProPoint {
     /// Datetime.
     /// - GPS5 devices: derived from `GPSU` message, once per point cluster.
     /// - GPS9 devices: logged per point.
-    pub datetime: PrimitiveDateTime,
+    // pub datetime: PrimitiveDateTime,
     /// DOP, dilution of precision.
     /// `GPSP` for `GPS5` device (Hero10 and earlier),
     /// Value at index 7 in `GPS9` array (Hero11 and later)
@@ -28,22 +26,46 @@ pub struct GoProPoint {
     /// Value nr 9 in GPS9 array (Hero11 and later)
     pub fix: u32,
     /// Timestamp relative to video
-    pub time: Duration,
+    pub timestamp: Duration,
 }
 
 impl Default for GoProPoint {
     fn default() -> Self {
         Self {
-            latitude: f64::default(),
-            longitude: f64::default(),
-            altitude: f64::default(),
+            point: Self::temporal_point_default(),
             speed2d: f64::default(),
             speed3d: f64::default(),
-            datetime: datetime!(2000-01-01 0:00), // GoPro start date
+            // datetime: datetime!(2000-01-01 0:00), // GoPro start date
             dop: f64::default(),
             fix: u32::default(),
-            time: Duration::default(),
+            timestamp: Duration::default(),
         }
+    }
+}
+
+#[cfg(feature = "gpx")]
+impl From<&GoProPoint> for gpx::Waypoint {
+    /// Converts the local `crate::Point` to `Gpx::Waypoint`.
+    fn from(value: &GoProPoint) -> gpx::Waypoint {
+        let gp = geo_types::Point::new(value.longitude(), value.latitude());
+        let mut wp = gpx::Waypoint::new(gp);
+
+        wp.elevation = Some(value.altitude());
+        wp.speed = Some(value.speed2d);
+        wp.time = value.datetime()
+            .map(|dt| dt.into())
+            .ok();
+
+        // other GPX fields:
+        // name: todo!(), // use for ID?
+        // geoidheight: todo!(), // compared to altitude/elevation?
+        // Below fields only relevant for GoPro
+        // fix: todo!(), //
+        // hdop: todo!(), // can these be found somewhere? which is gopros dop type? horisontal, vertical or positional?
+        // vdop: todo!(),
+        // pdop: todo!(),
+
+        wp
     }
 }
 
@@ -55,33 +77,20 @@ impl std::fmt::Display for GoProPoint {
             altitude:  {}
             speed2d:   {}
             speed3d:   {}
-            datetime:  {:?}
             fix:       {}
             precision: {}
             time:      {:?}",
-            self.latitude,
-            self.longitude,
-            self.altitude,
+            self.latitude(),
+            self.longitude(),
+            self.altitude(),
             self.speed2d,
             self.speed3d,
-            // self.heading,
-            self.datetime,
             self.dop,
             self.fix,
-            self.time,
+            self.timestamp,
         )
     }
 }
-
-// impl From<(&[f64], &[f64])> for Vec<GoProPoint> {
-//     /// Convert a GPS9 or GPS5 array and a scale array
-//     /// to `GoProPoint`.
-//     /// Expects order to be `(GPS, SCALE)`.
-//     fn from(value: (&[f64], &[f64])) -> Vec<Self> {
-
-//         Vec::new()
-//     }
-// }
 
 /// Point derived from GPS STRM with STNM "GPS (Lat., Long., Alt., 2D speed, 3D speed)"
 impl GoProPoint {
@@ -89,49 +98,127 @@ impl GoProPoint {
     /// from either a `GPS5` (5 value array) or a `GPS9` (9 value array) cluster,
     /// the other slice contains scaling values.
     ///
+    /// Slices map 1:1. I.e. data value at index 0 in `gps_slice` should
+    /// be scaled with value at index 0 in `scale_slice` and so on.
+    ///
     /// For `GPS5` devices `dop` (dilution of precision) is stored in `GPSP`,
     /// and `fix` in `GPSF` and have to be specified separately
-    fn from_raw(
+    fn from_gps9_slice(
         gps_slice: &[f64],   // GPS5 (all devices) or GPS9 (Hero11)
         scale_slice: &[f64], // SCAL (all devices)
     ) -> Self {
         assert_eq!(gps_slice.len(), scale_slice.len(),
-            "Must be equal: GPS5/9 slice has length {}, but scale slice has length {}",
+            "Must be equal in size: GPS5/9 slice has length {}, but scale slice has length {}",
             gps_slice.len(),
             scale_slice.len()
         );
 
         // Default point with time set to GoPro basetime 2000-01-01
         let mut point = Self::default();
+        let mut latitude = 0.;
+        let mut longitude = 0.;
+        // iterate over data and scale slices simultaneously,
+        // i.e. data value will match correct scale value
         gps_slice.iter().zip(scale_slice)
             .enumerate()
             .for_each(|(i, (gps, scl))| {
                 match i {
                     // 0 - 4 GPS5, GPS9
-                    0 => point.latitude = gps/scl,
-                    1 => point.longitude = gps/scl,
-                    2 => point.altitude = gps/scl,
+                    // 0 => point.latitude. = gps/scl,
+                    // 1 => point.longitude = gps/scl,
+                    0 => latitude = gps/scl, // no direct access to x/y (lon/lat) fields
+                    1 => longitude = gps/scl, // no direct access to x/y (lon/lat) fields
+                    2 => point.point.altitude = gps/scl,
                     3 => point.speed2d = gps/scl,
                     4 => point.speed3d = gps/scl,
                     // 5 - 8 GPS9 only
-                    5 => point.datetime += (gps/scl).days(),
-                    6 => point.datetime += (gps/scl).seconds(),
+                    // 5 => point.datetime += (gps/scl).days(),
+                    // 6 => point.datetime += (gps/scl).seconds(),
+                    5 => point.point.timestamp += (gps/scl).days(),
+                    6 => point.point.timestamp += (gps/scl).seconds(),
                     7 => point.dop = gps/scl,
                     8 => point.fix = (gps/scl).round() as u32,
                     _ => (),
                 }
             });
 
-        point
+        point.with_lat_lon(latitude, longitude)
     }
 
-    // Sets datetime.
-    pub fn with_datetime(self, datetime: PrimitiveDateTime) -> Self {
-        Self {
-            datetime,
-            ..self
-        }
+    pub(crate) fn temporal_point_default() -> TemporalPoint3D {
+        let p2d = spatio_types::geo::Point::new(f64::default(), f64::default());
+        let dt_nanos_i128 = datetime!(2000-01-01 0:00 +0).unix_timestamp_nanos(); // using gopro "default" datetime
+        let systime = UNIX_EPOCH + Duration::nanoseconds_i128(dt_nanos_i128);
+        TemporalPoint3D::new(p2d, f64::default(), systime)
     }
+
+    pub fn point(&self) -> &TemporalPoint3D {
+        &self.point
+    }
+
+    pub fn latitude(&self) -> f64 {
+        self.point.point().lat()
+    }
+
+    pub fn longitude(&self) -> f64 {
+        self.point.point().lon()
+    }
+
+    pub fn altitude(&self) -> f64 {
+        self.point.altitude()
+    }
+
+    /// Returns haversine/great arc distance in meters to another point.
+    pub fn haversine(&self, other: &Self) -> f64 {
+        self.point.distance_to(&other.point)
+    }
+
+    pub fn add_duration(&mut self, duration: Duration) {
+        self.point.timestamp += duration;
+    }
+
+    /// Returns date time as system time stamp,
+    /// as set in the underlying point type.
+    pub fn systemtime(&self) -> &SystemTime {
+        self.point.timestamp()
+    }
+
+    pub fn datetime(&self) -> Result<OffsetDateTime, GpmfError>{
+        let nanoseconds_u128 = self.point
+            .timestamp()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_nanos();
+        let nanoseconds_i128 = i128::try_from(nanoseconds_u128)?;
+        Ok(OffsetDateTime::from_unix_timestamp_nanos(nanoseconds_i128)?)
+    }
+
+    // // Sets datetime.
+    // pub fn with_primitivedatetime(self, datetime: PrimitiveDateTime) -> Self {
+    //     Self {
+    //         datetime,
+    //         ..self
+    //     }
+    // }
+
+    // pub fn with_system_time(self, system_time: &SystemTime) -> Self {
+    //     Self {
+    //         point: TemporalPoint3D {
+    //             timestamp: system_time.to_owned(),
+    //             ..self.point
+    //         },
+    //         ..self
+    //     }
+    // }
+
+    // pub fn with_system_time_nanos(self, system_time_nanos: i128) -> Self {
+    //     Self {
+    //         point: TemporalPoint3D {
+    //             timestamp: UNIX_EPOCH + Duration::nanoseconds_i128(system_time_nanos),
+    //             ..self.point
+    //         },
+    //         ..self
+    //     }
+    // }
 
     // Sets dilution of precision.
     pub fn with_dop(self, dop: f64) -> Self {
@@ -152,8 +239,21 @@ impl GoProPoint {
 
     pub fn with_lat_lon(self, latitude: f64, longitude: f64) -> Self {
         Self {
-            latitude,
-            longitude,
+            point: TemporalPoint3D {
+                point: spatio_types::geo::Point::new(longitude, latitude),
+                ..self.point
+            },
+            ..self
+        }
+    }
+
+
+    pub fn with_altitude(self, altitude: f64) -> Self {
+        Self {
+            point: TemporalPoint3D {
+                altitude,
+                ..self.point
+            },
             ..self
         }
     }
@@ -217,15 +317,17 @@ impl GoProPoint {
         });
 
         // Datetime for coordinate cluster
-        let gpsu: PrimitiveDateTime = devc_stream
+        // let gpsu: PrimitiveDateTime = devc_stream
+        //     .find(&FourCC::GPSU)
+        //         .and_then(|s| s.first_value())
+        //         .and_then(|v| v.into())?;
+        let gpsu: SystemTime = devc_stream
             .find(&FourCC::GPSU)
                 .and_then(|s| s.first_value())
                 .and_then(|v| v.into())?;
-        // or return generic date than error if it's only timestamp that can not be parsed then use:
-        // .unwrap_or(NaiveDate::from_ymd(2000, 1, 1)
-        // .and_hms_milli(0, 0, 0, 0)),
+        // or better to return generic date than error?
 
-        // GPS satellite fix, 0 = no lock, 2 = 2D lock, 3 = 3D lock
+        // GPS satellite lock level, 0 = no lock, 2 = 2D lock, 3 = 3D lock
         let gpsf: u32 = devc_stream
             .find(&FourCC::GPSF)
                 .and_then(|s| s.first_value())
@@ -241,16 +343,27 @@ impl GoProPoint {
         let relative_time = devc_stream.time.to_owned() // TODO impl Deref
             .map_or_else(|| Duration::default(), |t| t.relative.to_owned());
 
+        // Create temporal 3d point with unix timestamp
+        // let utc_nanos = gpsu.as_utc().unix_timestamp_nanos();
+        // let systemtime = UNIX_EPOCH + Duration::nanoseconds_i128(utc_nanos);
+        let point_xyzt = TemporalPoint3D::new(
+            Point::new(
+                lon_sum / len as f64 / lon_scl,
+                lat_sum / len as f64 / lat_scl
+            ),
+            alt_sum / len as f64 / alt_scl,
+            // systemtime
+            gpsu
+        );
+
         Some(Self {
-            latitude: lat_sum / len as f64 / lat_scl,
-            longitude: lon_sum / len as f64 / lon_scl,
-            altitude: alt_sum / len as f64 / alt_scl,
+            point: point_xyzt,
             speed2d: sp2d_sum / len as f64 / sp2d_scl,
             speed3d: sp3d_sum / len as f64 / sp3d_scl,
-            datetime: gpsu,
+            // datetime: gpsu,
             dop: gpsp as f64 / 100.,
             fix: gpsf,
-            time: relative_time,
+            timestamp: relative_time,
         })
     }
 
@@ -278,7 +391,7 @@ impl GoProPoint {
         // Relative timestamp not set
         // let mut raw_points: Vec<GoProPoint> = gps9.par_iter()
         let mut points: Vec<GoProPoint> = gps9.iter()
-            .map(|gps| GoProPoint::from_raw(&gps, &scale))
+            .map(|gps| GoProPoint::from_gps9_slice(&gps, &scale))
             .collect();
 
         // let devc_time = devc_stream.time.as_ref()?.to_owned();
@@ -287,17 +400,27 @@ impl GoProPoint {
         // points.iter_mut()
         //     .for_each(|p| p.time = t0 + (p.datetime - dt0));
 
+        // Derive relative timestamp for video timeline.
         if let Some(ts) = devc_stream.time.as_ref() {
             let t0 = ts.relative;
-            let dt0 = points.first()?.datetime;
-            points.iter_mut()
-                .for_each(|p| p.time = t0 + (p.datetime - dt0));
+            let dt0 = points.first()?.datetime().ok()?;
+            for point in points.iter_mut() {
+                point.timestamp = t0 + (point.datetime().ok()? - dt0);
+            }
+            // points.iter_mut()
+            //     .for_each(|p| p.timestamp = t0 + (p.datetime().ok()? - dt0));
         }
 
         Some(points)
     }
 
+    /// Returns datetime as string.
     pub fn datetime_to_string(&self) -> Result<String, GpmfError> {
-        primitivedatetime_to_string(&self.datetime)
+        // this convesion only takes place due to how
+        // time-rs handles systemtime, only via OffsetDateTime...
+        // GoPro does not log timezone/offset.
+        let odt = self.datetime()?;
+        let pdt = PrimitiveDateTime::new(odt.date(), odt.time());
+        primitivedatetime_to_string(&pdt)
     }
 }

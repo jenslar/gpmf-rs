@@ -1,6 +1,6 @@
 //! Various GPMF-related errors.
 
-use std::{fmt, path::PathBuf};
+use std::{fmt, path::PathBuf, time::SystemTimeError};
 
 use crate::gopro::GoProFileType;
 
@@ -11,6 +11,8 @@ pub enum GpmfError {
     Mp4Error(mp4iter::errors::Mp4Error),
     /// Error parsing JPEG.
     JpegError(jpegiter::JpegError),
+    #[cfg(feature = "gpx")]
+    GpxError(gpx::errors::GpxError),
     /// Failed to locate GoPro offsets in MP4.
     // NoMp4Offsets(mp4iter::FourCC),
     NoMp4Offsets(String),
@@ -24,8 +26,8 @@ pub enum GpmfError {
     ParseIntError(std::num::ParseIntError),
     /// Generic GPMF parse error
     ParseError,
-    /// IO error
-    DowncastIntError(std::num::TryFromIntError),
+    /// Int cast error
+    TryFromIntError(std::num::TryFromIntError),
     /// Failed to cast source type into target type.
     IOError(std::io::Error),
     /// Filesizes of e.g. 0 sized place holders.
@@ -35,6 +37,7 @@ pub enum GpmfError {
     /// MP4 0 sized atoms,
     /// e.g. 1k Dropbox place holders.
     UnexpectedAtomSize{len: u64, offset: u64},
+    SystemTimeError(SystemTimeError),
     /// No such atom.
     NoSuchAtom(String),
     /// MP4 ouf of bounds.
@@ -56,6 +59,11 @@ pub enum GpmfError {
     NoMuid,
     /// Failed to find GUMI
     NoGumi,
+    NoCpid,
+    /// Failed to find any of MUID, GUMI, CPID (Hero 13+)
+    NoSessionId,
+    /// Failed to find firmware to derive device ID from.
+    NoDeviceId,
     /// For handling GPMF sources, when e.g. an MP4-file
     /// was expected but another file type was passed.
     InvalidFileType(PathBuf),
@@ -72,6 +80,11 @@ pub enum GpmfError {
     /// Model or camera not known,
     /// mostly for generic MP4 files with no identifiers.
     UknownDevice,
+    /// Failed to locate samples in track.
+    NoSamples,
+    /// Number of samples and timestamps
+    /// differ in number.
+    SamplesTimestampSizeMismatch,
     /// No data for requested type (e.g. no GPS logged)
     NoData,
     /// No recording session
@@ -87,6 +100,8 @@ impl fmt::Display for GpmfError {
         match self {
             GpmfError::Mp4Error(err) => write!(f, "{err}"),
             GpmfError::JpegError(err) => write!(f, "{err}"),
+            #[cfg(feature = "gpx")]
+            GpmfError::GpxError(err) => write!(f, "GPX error: {err}"),
             // GpmfError::NoMp4Offsets => write!(f, "Failed to locate GoPro GPMF offsets in MP4."),
             GpmfError::NoMp4Offsets(name) => write!(f, "Failed to locate GoPro GPMF offsets in MP4 for handler with name '{name}'."),
             GpmfError::BinReadError(err) => write!(f, "{err}"),
@@ -94,11 +109,12 @@ impl fmt::Display for GpmfError {
             GpmfError::Utf8Error(err) => write!(f, "{err}"),
             GpmfError::ParseIntError(err) => write!(f, "Unable to parse string into integer: {}", err),
             GpmfError::ParseError => write!(f, "Failed to parse GPMF data."),
-            GpmfError::DowncastIntError(err) => write!(f, "Failed to downcast integer: {err}"),
+            GpmfError::TryFromIntError(err) => write!(f, "Failed to downcast integer: {err}"),
             GpmfError::IOError(err) => write!(f, "IO error: {}", err),
             GpmfError::ReadMismatch{got, expected} => write!(f, "Read {got} bytes, expected {expected} bytes."),
             GpmfError::OffsetMismatch{got, expected} => write!(f, "Moved {got} bytes, expected to move {expected} bytes"),
             GpmfError::UnexpectedAtomSize{len, offset} => write!(f, "Unexpected MP4 atom size of {len} bytes @ offset {offset}."),
+            GpmfError::SystemTimeError(error) => write!(f, "System Time error: {error}"),
             GpmfError::NoSuchAtom(name) => write!(f, "No such atom {name}."),
             GpmfError::BoundsError((got, max)) => write!(f, "Bounds error: tried to read file at {got} with max {max}."),
             GpmfError::MaxFileSizeExceeded {max, got, path} => write!(f, "{} ({got} bytes) exceeds maximum file size of {max}.", path.display()),
@@ -108,6 +124,9 @@ impl fmt::Display for GpmfError {
             GpmfError::InvalidFourCC => write!(f, "Invalid FourCC"),
             GpmfError::NoMuid => write!(f, "No MUID found"),
             GpmfError::NoGumi => write!(f, "No GUMI found"),
+            GpmfError::NoCpid => write!(f, "No CPID found"),
+            GpmfError::NoSessionId => write!(f, "Failed to derive session ID"),
+            GpmfError::NoDeviceId => write!(f, "Failed to derive device ID"),
             GpmfError::InvalidGoProFileType(filetype) => write!(f, "Can not use {filetype:?} for this action"),
             GpmfError::InvalidFileType(path) => write!(f, "Invalid file type: '{}'", path.display()),
             GpmfError::PathNotSet => write!(f, "Path not set"),
@@ -115,6 +134,8 @@ impl fmt::Display for GpmfError {
             GpmfError::LowResVideoNotSet => write!(f, "Path for low-resolution clip not set"),
             GpmfError::FingerprintMismatch => write!(f, "GoProFile merge failed: fingerprint mismatch."),
             GpmfError::UknownDevice => write!(f, "Unknown device"),
+            GpmfError::NoSamples => write!(f, "Failed to locate samples in track"),
+            GpmfError::SamplesTimestampSizeMismatch => write!(f, "Sensor samples and sample timestamps differ in mnumber."),
             GpmfError::NoData => write!(f, "No data for requested type"),
             GpmfError::NoSession => write!(f, "No session for specified MP4"),
             GpmfError::NoParentDir => write!(f, "Failed to determine path of parent dir."),
@@ -126,6 +147,13 @@ impl fmt::Display for GpmfError {
 impl From<std::io::Error> for GpmfError {
     fn from(err: std::io::Error) -> Self {
         GpmfError::IOError(err)
+    }
+}
+
+/// Converts std::time::SystemTimeError to GpmfError
+impl From<std::time::SystemTimeError> for GpmfError {
+    fn from(err: std::time::SystemTimeError) -> Self {
+        GpmfError::SystemTimeError(err)
     }
 }
 
@@ -141,6 +169,13 @@ impl From<std::string::FromUtf8Error> for GpmfError {
 impl From<std::num::ParseIntError> for GpmfError {
     fn from(err: std::num::ParseIntError) -> GpmfError {
         GpmfError::ParseIntError(err)
+    }
+}
+
+/// Converts std::num::TryFromIntError to GpmfError
+impl From<std::num::TryFromIntError> for GpmfError {
+    fn from(err: std::num::TryFromIntError) -> GpmfError {
+        GpmfError::TryFromIntError(err)
     }
 }
 
@@ -164,9 +199,24 @@ impl From<time::Error> for GpmfError {
     }
 }
 
+/// Converts time::Error to GpmfError
+impl From<time::error::ComponentRange> for GpmfError {
+    fn from(err: time::error::ComponentRange) -> GpmfError {
+        GpmfError::TimeError(time::Error::ComponentRange(err))
+    }
+}
+
 /// Converts GpmfError to std::io::Error
 impl From<GpmfError> for std::io::Error {
     fn from(err: GpmfError) -> Self {
         std::io::Error::new(std::io::ErrorKind::Other, err)
+    }
+}
+
+#[cfg(feature = "gpx")]
+/// Converts gpx::errors::GpxError to GpmfError
+impl From<gpx::errors::GpxError> for GpmfError {
+    fn from(err: gpx::errors::GpxError) -> GpmfError {
+        GpmfError::GpxError(err)
     }
 }

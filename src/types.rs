@@ -10,3 +10,7 @@ pub type Muid = [u32; 8];
 /// The high-resolution video always has GUMI set.
 /// For older devices GUMI is set for all clips.
 pub type Gumi = [u32; 4];
+/// Presumably unique clip ID
+/// i.e. unqique per file..
+/// Found in at least Hero 13.
+pub type Cpid = [u32; 4];

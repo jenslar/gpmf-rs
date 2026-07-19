@@ -4,7 +4,7 @@
 /// GPMF data type.
 /// This will have to be updated if new data types are added or
 /// future devices change the description given by the `STNM` stream.
-/// 
+///
 /// Model names may be missing and will be updated with new sample data.
 /// Only models that are confirmed for each data type are listed.
 #[derive(Debug, Clone)]
@@ -68,6 +68,12 @@ pub enum DataType {
     /// Present for Hero 9
     WindProcessing,
     Other(String),
+}
+
+impl Into<DataType> for &str {
+    fn into(self) -> DataType {
+        DataType::from_str(self)
+    }
 }
 
 impl DataType {
@@ -138,7 +144,7 @@ impl DataType {
             "Accelerometer" => Self::Accelerometer,
             // Hero 5, 6
             "Accelerometer (up/down, right/left, forward/back)" => Self::AccelerometerUrf,
-            // Hero 9 (comma spacing is correct)
+            // Hero 9 (comma spacing below is correct, do not change!)
             "AGC audio level[rms_level ,peak_level]" => Self::AgcAudioLevel,
             // Hero 7
             "Average luminance" => Self::AverageLuminance,

@@ -1,20 +1,20 @@
-use crate::SensorType;
+use crate::ImuType;
 
 #[derive(Debug, Clone, Copy)]
-pub enum SensorQuantifier {
+pub enum ImuQuantifier {
     Acceleration,
     Rotation,
     GravityDirection,
     Unknown
 }
 
-impl Default for SensorQuantifier {
+impl Default for ImuQuantifier {
     fn default() -> Self {
         Self::Unknown
     }
 }
 
-impl std::fmt::Display for SensorQuantifier {
+impl std::fmt::Display for ImuQuantifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             Self::Acceleration => write!(f, "Acceleration"),
@@ -25,13 +25,13 @@ impl std::fmt::Display for SensorQuantifier {
     }
 }
 
-impl From<&SensorType> for SensorQuantifier {
-    fn from(value: &SensorType) -> Self {
+impl From<&ImuType> for ImuQuantifier {
+    fn from(value: &ImuType) -> Self {
         match &value {
-            SensorType::Accelerometer => Self::Acceleration,
-            SensorType::GravityVector => Self::GravityDirection,
-            SensorType::Gyroscope => Self::Rotation,
-            SensorType::Unknown => Self::Unknown,
+            ImuType::Accelerometer => Self::Acceleration,
+            ImuType::GravityVector => Self::GravityDirection,
+            ImuType::Gyroscope => Self::Rotation,
+            ImuType::Unknown => Self::Unknown,
         }
     }
 }

@@ -7,13 +7,17 @@ pub const GOPRO_METADATA_HANDLER: &'static str = "GoPro MET";
 /// Track name (`hdlr` atom handler name) for GoPro audio track
 pub const GOPRO_AUDIO_HANDLER: &'static str = "GoPro AAC";
 /// Track name (`hdlr` atom handler name) for GoPro video track
+/// on devices that record in H264.
+pub const GOPRO_H264_HANDLER: &'static str = "GoPro AVC";
+/// Track name (`hdlr` atom handler name) for GoPro video track
 /// on devices that record in H265.
 pub const GOPRO_H265_HANDLER: &'static str = "GoPro H.265";
 /// Track name (`hdlr` atom handler name) for GoPro time code track
 pub const GOPRO_TIMECODE_HANDLER: &'static str = "GoPro TCD";
-/// Atom FourCC in `udta`` atom for GoPro metadata in GPMF format
+/// Atom FourCC in `udta` atom for GoPro metadata in GPMF format
 pub const GOPRO_UDTA_GPMF_FOURCC: &'static str = "GPMF";
 /// Min resolution threshold for high resolution GoPro video.
-/// Lower than this means it is a low-resolution vide
+/// Lower than this means it is a low-resolution video
 /// (i.e. LRV-file meant for on-device viewing).
 pub const GOPRO_MIN_WIDTH_HEIGHT: (u16, u16) = (1920, 1080);
+pub const GOPRO_VALID_EXTENSIONS: &[&str] = &["mp4", "lrv"];

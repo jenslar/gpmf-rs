@@ -16,6 +16,8 @@
 
 use std::io::{Seek, SeekFrom, Read, BufRead};
 
+use log::{info, debug};
+
 use crate::{DataType, GpmfError, DeviceId};
 use super::{FourCC, Header, Value, Timestamp};
 
@@ -59,7 +61,6 @@ impl Stream {
     pub fn new<R: Read + BufRead + Seek>(
         reader: &mut R,
         read_limit: usize,
-        debug: bool
     ) -> Result<Vec<Self>, GpmfError> {
 
         // Type definitions (BaseType::TYPE) for BaseType::COMPLEX.
@@ -75,13 +76,11 @@ impl Stream {
         while reader.seek(SeekFrom::Current(0))? < max {
             let header = Header::new(reader)?;
 
-            if debug {
-                // position is only offset from start of current DEVC, not entire MP4
-                println!("@{} {header:3?} | LEN: {}",
-                    reader.seek(SeekFrom::Current(0))?,
-                    header.size(true) + 8
-                );
-            }
+            // position is only offset from start of current DEVC, not entire MP4
+            debug!("@{} {header:3?} | LEN: {}",
+                reader.seek(SeekFrom::Current(0))?,
+                header.size(true) + 8
+            );
 
             // `FourCC::Invalid` currently a check for `&[0,0,0,0, ...]`
             // to be able to break loops in GPMF streams that end with 0-padding.
@@ -101,7 +100,7 @@ impl Stream {
                     // Set byte read limit to avoid embedding containers/0 in each other indefinitely if they
                     // follow directly after each other.
                     // let stream = Self::new(cursor, Some(header.size(false) as usize))?;
-                    let stream = Self::new(reader, header.size(false) as usize, debug)?;
+                    let stream = Self::new(reader, header.size(false) as usize)?;
 
                     streams.push(Self{
                         header,
@@ -265,6 +264,15 @@ impl Stream {
         }
     }
 
+    pub fn to_u32(&self) -> Option<Vec<u32>> {
+        match &self.streams {
+            StreamType::Nested(_) => None,
+            StreamType::Values(v) => v.iter()
+                .map(|b| b.into())
+                .collect(),
+        }
+    }
+
     /// Returns first `Stream` in a nested stream (i.e. contains more streams),
     /// `None` is returned if the stream is a terminal node (i.e. contains values).
     pub fn first_stream(&self) -> Option<&Stream> {
@@ -290,8 +298,13 @@ impl Stream {
     /// Find first stream with specified FourCC.
     /// Matches self and direct decendants.
     pub fn find(&self, fourcc: &FourCC) -> Option<&Self> {
+        // println!("Stream 4cc: {:?} (search for {fourcc:?})", self.fourcc());
         match self.has_fourcc(fourcc) {
-            true => return Some(&self),
+        // match self.fourcc() == fourcc {
+            true => {
+                // println!("OK FOUND {fourcc:?}");
+                return Some(&self)
+            },
             false => {
                 match &self.streams {
                     StreamType::Nested(streams) => {
@@ -399,7 +412,7 @@ impl Stream {
     /// the original MP4 (at the `DEVC` container level).
     /// The current, official GPMF specification
     /// does not implement logging time stamps for individual data points.
-    /// Thus, GPMF data extracted via e.g. `ffmpeg` or in the MP4 `udta` atom
+    /// Thus, raw GPMF data extracted via e.g. `ffmpeg` or in the MP4 `udta` atom
     /// will not and can not have timestamps.
     pub fn time_relative(&self) -> Option<time::Duration> {
         self.time.as_ref().map(|t| t.relative)
@@ -412,7 +425,7 @@ impl Stream {
     /// The current, official GPMF specification
     /// does not implement logging time stamps for individual data points,
     /// other than for `GPS9` devices (Hero11 and newer).
-    /// Thus, GPMF data extracted via e.g. `ffmpeg` or in the MP4 `udta` atom
+    /// Thus, raw GPMF data extracted via e.g. `ffmpeg` or in the MP4 `udta` atom
     /// will not and can not have timestamps.
     pub fn time_duration(&self) -> Option<time::Duration> {
         self.time.as_ref().map(|t| t.duration)
@@ -530,7 +543,7 @@ impl Stream {
             _ => "      ".to_owned(),
         };
 
-        println!(
+        info!(
             "{}{}, NAME: {:?}, TIME: {:?}",
             prefix,
             &self.header,
@@ -544,7 +557,7 @@ impl Stream {
             }
             StreamType::Values(values) => {
                 for v in values.iter() {
-                    println!("        {:?}", v.debug())
+                    info!("        {:?}", v.debug())
                 }
             }
         }
