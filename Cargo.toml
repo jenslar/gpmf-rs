@@ -19,7 +19,8 @@ binrw = "0.15"
 indicatif = { version = "0.18.4", features = ["rayon"]}
 log = "0.4.32"
 spatio-types = "0.2.3"
-gpx = {git = "https://github.com/georust/gpx", rev = "7ad83e3", optional = true} # Gpx::new() is not in version 0.10.0
+gpx = {version = "0.10", optional = true} # Gpx::new() is not in version 0.10.0
+# gpx = {git = "https://github.com/georust/gpx", rev = "7ad83e3", optional = true} # Gpx::new() is not in version 0.10.0
 geo-types = {version = "0.7.19", optional = true}
 
 [features]

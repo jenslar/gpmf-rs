@@ -212,7 +212,8 @@ impl Gps {
             .map(|p| gpx::Waypoint::from(p))
             .collect();
         track.segments = vec![gpx::TrackSegment {points}];
-        let mut gpxout = gpx::Gpx::new(gpx::GpxVersion::Gpx11);
+        let mut gpxout = gpx::Gpx::default();
+        gpxout.version = gpx::GpxVersion::Gpx11;
         gpxout.tracks = vec![track];
 
         gpxout
