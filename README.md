@@ -2,7 +2,7 @@
 
 Rust crate for parsing GoPro GPMF data, directly from MP4, from "raw" GPMF-files extracted via ffmpeg, or byte slices.
 
-If `GoProSession::from_path()` or `GoProSession::from_goprofile()` can not locate the remaining clips for a recording session,
+If `GoProSession::locate()` can not locate the remaining clips for a recording session,
 it is usually because I do not have enough sample data for that model (a recording that is long enough to span at least two clips is required).
 GoPro sometimes change how the `MUID` and `GUMI` identifiers are used between models, which creates this issue. From Hero 13 (and on?) there is also the new `CPID` (presumably "clip ID"), which is only listed in the GPMF section of the `udta` MP4 atom.
 
