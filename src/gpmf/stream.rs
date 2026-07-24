@@ -317,26 +317,6 @@ impl Stream {
         }
     }
 
-    // /// Find all stream with specified FourCC. Matches current stream
-    // /// and direct decendants.
-    // /// If current stream matches, a single `Stream` will be returned.
-    // pub fn find_all(&self, fourcc: &FourCC) -> Vec<Self> {
-    //     match self.has_fourcc(fourcc) {
-    //         true => return vec![self.to_owned()],
-    //         false => {
-    //             if let StreamType::Nested(streams) = &self.streams {
-    //                 streams.iter()
-    //                     .filter(|st| st.has_fourcc(fourcc))
-    //                     .cloned()
-    //                     .collect::<Vec<_>>()
-    //             } else {
-    //                 Vec::new()
-    //             }
-    //         }
-    //     }
-    // }
-    // pub fn find_all(&self, fourcc: &FourCC, recursive: bool) -> Vec<Self> {
-
     /// Find all stream with specified FourCC. Matches current stream
     /// and direct decendants.
     pub fn find_all(&self, fourcc: &FourCC) -> Vec<Self> {
@@ -344,11 +324,8 @@ impl Stream {
         match &self.streams {
             StreamType::Values(_) => return Vec::new(),
             StreamType::Nested(strms) => {
-                // streams.append(
-                //     &mut strms.iter()
                 streams.extend(
                     strms.iter()
-                        // .inspect(|s| println!("{:?}", s.fourcc()))
                         .filter(|s| s.has_fourcc(fourcc))
                         .cloned()
                         .collect::<Vec<_>>()
@@ -384,17 +361,17 @@ impl Stream {
         streams
     }
 
-    pub fn find_all2(&self, fourcc: &FourCC) -> Vec<Self> {
-        match &self.streams {
-            StreamType::Values(_) => vec![],
-            StreamType::Nested(streams) => {
-                streams.iter()
-                    .filter(|s| s.has_fourcc(fourcc))
-                    .cloned()
-                    .collect()
-            }
-        }
-    }
+    // pub fn find_all2(&self, fourcc: &FourCC) -> Vec<Self> {
+    //     match &self.streams {
+    //         StreamType::Values(_) => vec![],
+    //         StreamType::Nested(streams) => {
+    //             streams.iter()
+    //                 .filter(|s| s.has_fourcc(fourcc))
+    //                 .cloned()
+    //                 .collect()
+    //         }
+    //     }
+    // }
 
     /// Returns the human redable name of the stream
     /// if it is a `STRM`, (stored as string in `STNM`),

@@ -1,15 +1,4 @@
 //! GoPro device name (`DVNM`).
-//!
-//! Fusion: FUSION       FS1.04.01.70.00 ERROR on `--tree`: Failed to extract metadata from GoPro MP4: IO error: failed to fill whole buffer
-//! Hero5:  HERO5 Black  HD5.02.02.00.00 (no gpmf section in udta)
-//! Hero6:  HERO6 Black  HD6.01.01.60.00
-//! Hero7:  HERO7 Black  HD7.01.01.80.00
-//! Hero8:  HERO8 Black  HD8.01.01.20.00
-//! Max1:   GoPro Max    H19.03.01.30.00 (same for 360 mode or hero mode)
-//! Hero11: HERO11 Black H22.01.02.01.00
-//! Hero12: HERO12 Black H23.01.02.20.00
-//! Hero13: HERO13 Black H24.01.01.12.00 / FIRM ex: H24.01.01.20.00
-//! Max2:   MAX2         H24.02.01.09.71
 
 use std::{fmt::Display, path::Path};
 
@@ -85,29 +74,6 @@ impl DeviceName {
         Ok(meta.device()?.name)
     }
 
-    // pub fn from_firmware_id_old(id: &str) -> Self {
-    //     match &id[..3] {
-    //         "HD5" => Self::Hero5Black,
-    //         "HD6" => Self::Hero6Black,
-    //         "FS1" => Self::Fusion,
-    //         "HD7" => Self::Hero7Black,
-    //         "HD8" => Self::Hero8Black,
-    //         "HD9" => Self::Hero9Black, // possibly H20
-    //         "H19" => Self::Max,
-    //         "H20" => Self::Hero9Black, // possibly HD9, and H20 is another device
-    //         "H21" => Self::Hero10Black,
-    //         "H22" => Self::Hero11Black,
-    //         "H23" => Self::Hero12Black,
-    //         "H24" => Self::Hero13Black, // e.g. H24.01.01.12.00
-    //         "H26" => Self::Mission1, // e.g. H24.01.01.12.00
-    //         // Max2 id also starts with H24,
-    //         // but second value differs:
-    //         // H24.01 vs H24.02
-    //         // "H24" => Self::Hero13Black, // e.g. H24.01.01.12.00
-    //         _ => Self::Unknown
-    //     }
-    // }
-
     /// should use HXX.YY for model not just HXX:
     /// HXX.YY.AA.BB.CC =>
     /// model: H.XX.YY
@@ -137,7 +103,6 @@ impl DeviceName {
             "H18.02" => Self::Hero7White,
             "H18.03" => Self::Hero7Silver,
             "H19.03" => Self::Max,
-            // "H20" => Self::Hero9Black, // possibly HD9, and H20 is another device
             "H9.01" => Self::Hero9Black, // HD9 according to https://github.com/nitrxgen/gopro-firmware
             "H21.01" => Self::Hero10Black,
             "H22.01" => Self::Hero11Black,
@@ -149,47 +114,12 @@ impl DeviceName {
             "H25.03" => Self::HeroLit,
             "H26.01" => Self::Mission1Pro, // e.g. H26.01.01.09.45
             "H26.02" => Self::Mission1, // e.g. H26.01.01.09.45
-            // Max2 id also starts with H24,
-            // but second value differs:
-            // H24.01 vs H24.02
-            // "H24" => Self::Hero13Black, // e.g. H24.01.01.12.00
             _ => Self::Unknown
         }
     }
 
     pub fn from_str(model: &str) -> Self {
         match model.trim().replace(" ", "").to_lowercase().as_str() {
-            // Hero5 Black identifies itself as "Camera" so far.
-            // "Camera" | "Hero5 Black" | "HERO5 Black" => Self::Hero5Black,
-            // "Hero6 Black" | "HERO6 Black" => Self::Hero6Black,
-            // "Hero7 Black" | "HERO7 Black" => Self::Hero7Black,
-            // "Hero8 Black" | "HERO8 Black" => Self::Hero8Black,
-            // "Hero9 Black" | "HERO9 Black" => Self::Hero9Black,
-            // "Hero10 Black" | "HERO10 Black" => Self::Hero10Black,
-            // "Hero11 Black" | "HERO11 Black" => Self::Hero11Black,
-            // "Hero12 Black" | "HERO12 Black" => Self::Hero12Black,
-            // "Hero13 Black" | "HERO13 Black" => Self::Hero13Black,
-            // "MISSION 1 PRO" | "Mission 1 Pro" => Self::Mission1Pro,
-            // "Fusion" | "FUSION" => Self::Fusion,
-            // "GoPro Max" | "MAX" => Self::Max,
-            // "GoPro Max2" | "MAX2" => Self::Max2,
-            // "GoPro Karma v1.0" => Self::Karma,
-
-            // // Hero5 Black identifies itself as "Camera" so far.
-            // "camera" | "hero5 black" => Self::Hero5Black,
-            // "hero6 black" => Self::Hero6Black,
-            // "hero7 black" => Self::Hero7Black,
-            // "hero8 black" => Self::Hero8Black,
-            // "hero9 black" => Self::Hero9Black,
-            // "hero10 black" => Self::Hero10Black,
-            // "hero11 black" => Self::Hero11Black,
-            // "hero12 black" => Self::Hero12Black,
-            // "hero13 black" => Self::Hero13Black,
-            // "mission 1 pro" => Self::Mission1Pro,
-            // "fusion" => Self::Fusion,
-            // "gopro max" | "max" => Self::Max,
-            // "gopro max2" | "max2" => Self::Max2,
-            // "gopro karma v1.0" => Self::Karma,
             // Hero5 Black identifies itself as "Camera" so far.
             "camera" | "hero5black" => Self::Hero5Black,
             "hero6black" => Self::Hero6Black,
@@ -249,7 +179,7 @@ impl DeviceName {
         }
     }
 
-    // Get documented sample frequency for a specific device
+    // WIP: Get documented sample frequency for a specific device
     // pub fn freq(&self, fourcc: FourCC) {
     //     match self {
 

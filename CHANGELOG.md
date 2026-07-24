@@ -1,3 +1,6 @@
+# v0.6.1
+- NEW: Added GPX `From` implementation for `Gps` and `Gpmf`, and GPX `TryFrom` implementation for `GoProFile`, `GoProSession` and `GoProMultiSession`. If possible use the `Gps` implementation. This allows for pruning bad points before export (`Gps::prune()`), since GoPro cameras (at least tested models) usually log dummy points before a satellite lock has been acquired - sometimes a cached, last known location.
+
 # v0.6.0
 - BREAKING: `GoProSession` no longer lists both high (`.MP4`) and low-resolution (`.LRV`) clips. Instead, it will match the resolution of the input clip and ignore other resolutions.
 - NEW: `GoProSession::locate` is the new method for deriving which clips belong to the same recording session. Only clips with the same resolution as the input clip will be considered.

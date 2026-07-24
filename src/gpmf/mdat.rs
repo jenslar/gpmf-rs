@@ -30,7 +30,6 @@ use crate::GpmfError;
 /// immediately after `mdat` FourCC.
 // #[derive(Debug, Default, BinRead)]
 #[derive(Debug, Default)]
-// #[derive(Debug)]
 pub struct GoProMdatHeader {
     pub gpro: [u8; 4], // GPRO
     pub size: u32, // size incl GPRO 4CC, little endian

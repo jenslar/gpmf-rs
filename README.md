@@ -2,7 +2,7 @@
 
 Rust crate for parsing GoPro GPMF data, directly from MP4, from "raw" GPMF-files extracted via ffmpeg, or byte slices.
 
-If `GoProSession::locate()` can not locate the remaining clips for a recording session,
+If `GoProSession::from_path()` or `GoProSession::from_goprofile()` can not locate the remaining clips for a recording session,
 it is usually because I do not have enough sample data for that model (a recording that is long enough to span at least two clips is required).
 GoPro sometimes change how the `MUID` and `GUMI` identifiers are used between models, which creates this issue. From Hero 13 (and on?) there is also the new `CPID` (presumably "clip ID"), which is only listed in the GPMF section of the `udta` MP4 atom.
 
@@ -32,8 +32,8 @@ fn main() -> std::io::Result<()> {
     println!("{gps:#?}");
 
     // Export accelerometer data.
-    let sensor = gpmf.imu(&ImuType::Accelerometer);
-    println!("{sensor:#?}");
+    let accelerometer = gpmf.imu(&ImuType::Accelerometer);
+    println!("{accelerometer:#?}");
     
     // Locate all clips in a recording session.
     // If a dir is not specified, the parent dir of the clip
@@ -45,7 +45,7 @@ fn main() -> std::io::Result<()> {
     let gpmf_session = session.gpmf()?;
     println!("{gpmf_session:#?}");
     
-    // Then export GPS data etc as usual...
+    // Then export GPS data etc as usual.
     let gps_session = gpmf_session.gps().prune(Some(2), Some(5.0));
     println!("{gps_session:#?}");
 

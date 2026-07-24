@@ -7,22 +7,32 @@
 //! MP4 creation time is not.
 
 use std::{
-    ffi::OsStr, io::{SeekFrom, copy}, path::{Path, PathBuf}
+    ffi::OsStr, io::copy, path::{Path, PathBuf}
 };
 
 use binrw::Endian;
 use blake3;
-use mp4iter::{Mp4, SampleOffset};
+use mp4iter::Mp4;
 use time::{
     Duration,
     PrimitiveDateTime,
 };
 
 use crate::{
-    Cpid, DeviceInfo, DeviceName, GOPRO_METADATA_HANDLER, GOPRO_MIN_WIDTH_HEIGHT, GOPRO_TIMECODE_HANDLER, Gpmf, GpmfError, Gps, Imu, ImuType, Stream, files::fileext_to_lcstring, gpmf::Value, types::{Gumi, Muid}
+    Cpid,
+    DeviceInfo,
+    DeviceName,
+    GOPRO_MIN_WIDTH_HEIGHT,
+    Gpmf,
+    GpmfError,
+    Gps,
+    Imu,
+    ImuType,
+    Stream,
+    types::{Gumi, Muid},
 };
 
-use super::{GoProMeta, GoProFileType};
+use super::GoProMeta;
 
 /// Represents an original, unedited GoPro MP4-file.
 ///
@@ -114,6 +124,22 @@ pub struct GoProFile {
     pub(crate) metadata: GoProMeta,
 }
 
+#[cfg(feature = "gpx")]
+impl TryFrom<GoProFile> for gpx::Gpx {
+    type Error = GpmfError;
+
+    /// Export GoProFile GPS log to GPX.
+    /// Note that this exports all points,
+    /// bad and good. It is usually better to
+    /// first prune points with satellite lock level below
+    /// and dilution of precision above
+    /// a given threshold and use the `From<Gps> for gpx::Gpx`
+    /// implementation instead.
+    fn try_from(value: GoProFile) -> Result<Self, Self::Error> {
+        Ok(value.gpmf()?.gps().to_gpx())
+    }
+}
+
 impl GoProFile {
     pub fn new(video: &Path) -> Result<Self, GpmfError> {
         let mut file = Self::default();
@@ -121,15 +147,15 @@ impl GoProFile {
         let mut mp4 = Mp4::new(video)?;
         file.source = mp4.path().to_path_buf();
 
-        // 1. Create "fingerprint" (read from disk)
-        //    from hash of first raw DEVC chunk.
+        // Create "fingerprint" (read from disk)
+        // from hash of first raw DEVC chunk.
         file.file_id = Self::file_id_from_mp4(&mut mp4)?;
 
-        // 2. Get first frame timestamp (read from disk)
+        // Get first frame timestamp (read from disk)
         // Exists in track data, not part of udta
         file.time_first_frame = mp4.time_first_frame(false)?;
 
-        // 3. Get additional data from udta atom (in-memory buffer)
+        // Get additional data from udta atom (in-memory buffer)
         file.resolution = mp4.resolution(true)?;
         // creation time is the same across all clips
         // in the same recording session
@@ -469,10 +495,8 @@ impl Default for GoProFile {
             gumi: [0; 4],
             cpid: None,
             cpin: None,
-            // fingerprint: Vec::default(),
             file_id: Vec::default(),
             session_id: Vec::default(),
-            // creation_time: mp4iter::mp4_time_zero(),
             creation_time: mp4iter::default_time(),
             duration: Duration::ZERO,
             time_first_frame: Duration::ZERO,

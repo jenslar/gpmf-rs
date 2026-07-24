@@ -1,4 +1,4 @@
-use crate::{DeviceId, DeviceName, GpmfError, gopro::GoProMeta};
+use crate::{DeviceName, GpmfError, gopro::GoProMeta};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DeviceInfo {

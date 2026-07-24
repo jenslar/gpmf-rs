@@ -13,6 +13,13 @@ use super::GoProPoint;
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Gps(Vec<GoProPoint>);
 
+#[cfg(feature = "gpx")]
+impl From<Gps> for gpx::Gpx {
+    fn from(value: Gps) -> Self {
+        value.to_gpx()
+    }
+}
+
 impl Gps {
     pub fn new(points: Vec<GoProPoint>) -> Self {
         Self(points)

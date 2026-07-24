@@ -22,14 +22,27 @@ use crate::{
 };
 
 #[derive(Debug, PartialEq)]
-// pub struct GoProSession(Vec<GoProFile>);
 pub struct GoProSession{
     pub(crate) creation_time: PrimitiveDateTime,
     pub resolution: (u16, u16),
-    ///(crate) Hash of gyro offsets strings in extra metadata.
-    // pub id: String,
     pub(crate) id: Vec<u8>,
     pub(crate) files: Vec<GoProFile>,
+}
+
+#[cfg(feature = "gpx")]
+impl TryFrom<GoProSession> for gpx::Gpx {
+    type Error = GpmfError;
+
+    /// Export GoProSession GPS log to GPX.
+    /// Note that this exports all points,
+    /// bad and good. It is usually better to
+    /// first prune points with satellite lock level below
+    /// and dilution of precision above
+    /// a given threshold and use the `From<Gps> for gpx::Gpx`
+    /// implementation instead.
+    fn try_from(value: GoProSession) -> Result<Self, Self::Error> {
+        Ok(value.gpmf()?.gps().to_gpx())
+    }
 }
 
 impl GoProSession {
@@ -44,13 +57,11 @@ impl GoProSession {
     }
     /// Create a session from a single clip.
     pub fn single(path: &Path) -> Result<Self, GpmfError> {
-        // Ok(Self(vec![GoProFile::new(path)?]))
         let file = GoProFile::new(path)?;
         Ok(Self {
             creation_time: file.creation_time,
             resolution: file.resolution,
             id: file.session_id().to_vec(),
-                // .ok_or(GpmfError::NoSessionId)?,
             files: vec![file],
         })
     }
@@ -67,14 +78,12 @@ impl GoProSession {
 
     pub fn add_path(&mut self, video: &Path, sort: bool) -> Result<(), GpmfError> {
         let file = GoProFile::new(video)?;
-
-        Ok(())
+        self.add_file(file, sort)
     }
 
     pub fn add_file(&mut self, file: GoProFile, sort: bool) -> Result<(), GpmfError> {
         if self.is_empty() {
             self.id = file.session_id().to_vec();
-                // .ok_or(GpmfError::NoSessionId)?;
             self.resolution = file.resolution;
             self.creation_time = file.creation_time;
             self.files.push(file);
@@ -216,31 +225,32 @@ impl GoProSession {
         in_session
     }
 
-    pub fn is_complete(&self) {
-        // generate presumed (not exact) timeline:
-        // assume all clips but the last have the same duration
-        // first frame for each clip -> add duration ->
+    // WIP: attempt to detect whether clips are missing
+    // pub fn is_complete(&self) {
+    //     // generate presumed (not exact) timeline:
+    //     // assume all clips but the last have the same duration
+    //     // first frame for each clip -> add duration ->
 
-        // check that last clip has short timespan that those
-        // preceding it, if not -> INCOMPLETE
+    //     // check that last clip has short timespan that those
+    //     // preceding it, if not -> INCOMPLETE
 
-        let mut duration_excl_last: Option<Duration> = None;
-        // let len = self.len();
-        for (i, file) in self.iter().enumerate() {
-            println!("{:2}. {} - {} = {}",
-                i+1,
-                file.time_first_frame(),
-                file.time_first_frame() + file.duration(),
-                file.duration(),
-            );
-            if i == 0 {
-                duration_excl_last = Some(file.duration());
-            }
-            if let Some(dur) = duration_excl_last {
-                debug!(" -> {}", file.time_first_frame() - dur)
-            }
-        }
-    }
+    //     let mut duration_excl_last: Option<Duration> = None;
+    //     // let len = self.len();
+    //     for (i, file) in self.iter().enumerate() {
+    //         println!("{:2}. {} - {} = {}",
+    //             i+1,
+    //             file.time_first_frame(),
+    //             file.time_first_frame() + file.duration(),
+    //             file.duration(),
+    //         );
+    //         if i == 0 {
+    //             duration_excl_last = Some(file.duration());
+    //         }
+    //         if let Some(dur) = duration_excl_last {
+    //             debug!(" -> {}", file.time_first_frame() - dur)
+    //         }
+    //     }
+    // }
 
     pub fn is_low_res(&self) -> bool {
         self.first().map(|gp| gp.is_low_res()).unwrap_or(false)
@@ -464,6 +474,22 @@ impl Default for GoProMultiSession {
     }
 }
 
+#[cfg(feature = "gpx")]
+impl TryFrom<GoProMultiSession> for gpx::Gpx {
+    type Error = GpmfError;
+
+    /// Export GoProMultiSession GPS log to GPX.
+    /// Note that this exports all points,
+    /// bad and good. It is usually better to
+    /// first prune points with satellite lock level below
+    /// and dilution of precision above
+    /// a given threshold and use the `From<Gps> for gpx::Gpx`
+    /// implementation instead.
+    fn try_from(value: GoProMultiSession) -> Result<Self, Self::Error> {
+        Ok(value.gpmf()?.gps().to_gpx())
+    }
+}
+
 impl GoProMultiSession {
     pub(crate) fn init(file: GoProFile) -> Result<Self, GpmfError> {
         let mut multi = Self::default();
@@ -479,7 +505,6 @@ impl GoProMultiSession {
     }
 
     pub fn add_file(&mut self, file: GoProFile, sort: bool) -> Result<(), GpmfError> {
-        // if Some(self.id.as_str()) == file.session_id().as_deref() {
         if &self.id == &file.session_id() {
             match file.is_low_res() {
                 true => self.low.add_file(file, sort)?,
@@ -495,7 +520,6 @@ impl GoProMultiSession {
 
     pub fn locate_all(dir: &Path, ignore_errors: bool) -> Result<Vec<Self>, GpmfError> {
         // k: session.id(), val: multi session
-        // let mut multisessions: HashMap<String, GoProMultiSession> = HashMap::new();
         let mut multisessions: HashMap<Vec<u8>, GoProMultiSession> = HashMap::new();
 
         if !dir.exists() {
@@ -529,20 +553,10 @@ impl GoProMultiSession {
                         let mut error_when_adding_file: Option<GpmfError> = None;
                         multisessions
                             .entry(gp.session_id().to_vec())
-                            // .and_modify(|session| session.add_file(gp.clone(), true)?)
                             .and_modify(|multisession| if let Err(err) = multisession.add_file(gp.clone(), true) {
                                 error_when_adding_file = Some(err);
                             })
                             .or_insert(GoProMultiSession::init(gp)?);
-                        // if let Some(id) = gp.session_id() {
-                        //     multisessions
-                        //         .entry(id)
-                        //         // .and_modify(|session| session.add_file(gp.clone(), true)?)
-                        //         .and_modify(|multisession| if let Err(err) = multisession.add_file(gp.clone(), true) {
-                        //             error_when_adding_file = Some(err);
-                        //         })
-                        //         .or_insert(GoProMultiSession::init(gp)?);
-                        // }
                         if let Some(err) = error_when_adding_file && !ignore_errors {
                             return Err(err)
                         }
@@ -634,7 +648,6 @@ impl GoProMultiSession {
     }
 
     pub fn is_empty(&self) -> bool {
-        // self.id == String::default() && self.high.is_empty() && self.low.is_empty()
         self.id.is_empty()
         && self.high.is_empty()
         && self.low.is_empty()

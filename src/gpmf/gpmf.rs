@@ -26,26 +26,31 @@ use std::fs::File;
 use std::io::{Cursor, Read};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Sender};
-use std::thread;
 
 use jpegiter::{Jpeg, JpegTag};
 use mp4iter::{Mp4, Mp4Error, Sample};
 use rayon::iter::IntoParallelRefMutIterator;
-use rayon::{
-    iter::ParallelBridge,
-    prelude::{
-        IntoParallelRefIterator,
-        ParallelIterator,
-    }
+use rayon::prelude::{
+    IntoParallelRefIterator,
+    ParallelIterator,
 };
 use time::macros::datetime;
 use time::{Duration, PrimitiveDateTime};
 
 use super::{FourCC, Stream, Timestamp};
-use crate::gpmf::stream;
-use crate::{DataType, DeviceId, GOPRO_DATETIME_DEFAULT, GoProPoint, GpmfError, Gps};
-use crate::{DeviceName, Imu, ImuType, StreamType, GOPRO_METADATA_HANDLER};
+use crate::{
+    DataType,
+    DeviceId,
+    GoProPoint,
+    GpmfError,
+    Gps
+};
+use crate::{
+    DeviceName,
+    Imu,
+    ImuType,
+    GOPRO_METADATA_HANDLER
+};
 
 /// Core GPMF struct.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -59,6 +64,20 @@ pub struct Gpmf {
     /// Path/s to the GoPro MP4 source/s
     /// the GPMF data was extracted from.
     pub source: Vec<PathBuf>,
+}
+
+#[cfg(feature = "gpx")]
+impl From<Gpmf> for gpx::Gpx {
+    /// Export GPMF GPS log to GPX.
+    /// Note that this exports all points,
+    /// bad and good. It is usually better to
+    /// first prune points with satellite lock level below
+    /// and dilution of precision above
+    /// a given threshold and use the `From<Gps> for gpx::Gpx`
+    /// implementation instead.
+    fn from(value: Gpmf) -> Self {
+        value.gps().to_gpx()
+    }
 }
 
 impl Gpmf {

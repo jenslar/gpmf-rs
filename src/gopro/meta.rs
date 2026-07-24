@@ -3,13 +3,19 @@
 //! GoPro embeds undocumented GPMF streams in the `udta` atom
 //! that is also extracted.
 
-use std::{collections::HashMap, io::{Cursor, Read}, path::{Path, PathBuf}};
+use std::{io::{Cursor, Read}, path::{Path, PathBuf}};
 
 use binrw::BinReaderExt;
-use geojson::de;
 use mp4iter::Mp4;
 
-use crate::{DeviceInfo, DeviceName, FourCC::{self, MUID}, GOPRO_UDTA_GPMF_FOURCC, Gpmf, GpmfError, gpmf::Value};
+use crate::{
+    DeviceInfo,
+    DeviceName,
+    FourCC,
+    GOPRO_UDTA_GPMF_FOURCC,
+    Gpmf,
+    GpmfError
+};
 
 /// Representations MP4 `udta` atom.
 /// Partially raw bytes, partially parsed
