@@ -1,6 +1,7 @@
 use core::f64;
 use std::u32;
 
+use log::warn;
 use spatio_types::point::TemporalPoint3D;
 use time::{Duration, OffsetDateTime};
 use crate::content_types::{
@@ -59,7 +60,7 @@ impl Gps {
 
     /// Returns center of GPS points cluster.
     pub fn center(&self) -> Option<GoProPoint> {
-        points_average(&self.0)
+        average_points(&self.0)
     }
 
     // pub fn first_timestamp(&self) -> Option<&Timestamp> {
@@ -209,6 +210,38 @@ impl Gps {
         None
     }
 
+    /// Downsample points. Latitude dependent downsampling.
+    /// For 1000 points a `downsample_factor = 100` results in
+    /// 10 points and so on.
+    /// `min` is the minimum nuber of points left
+    /// after downsampling.
+    /// E.g. constructing a polyline later requires a minimum of
+    /// two points.
+    /// At least one point will be returned regardless of `downsample_factor`.
+    pub fn downsample(
+        self,
+        downsample_factor: usize,
+        min: Option<usize>
+    ) -> Self {
+        Self(downsample_points(self.points(), downsample_factor, min))
+    }
+
+    /// Mutably downsample points. Latitude dependent downsampling.
+    /// For 1000 points a `downsample_factor = 100` results in
+    /// 10 points and so on.
+    /// `min` is the minimum nuber of points left
+    /// after downsampling.
+    /// E.g. constructing a polyline later requires a minimum of
+    /// two points.
+    /// At least one point will be returned regardless of `downsample_factor`.
+    pub fn downsample_mut(
+        &mut self,
+        downsample_factor: usize,
+        min: Option<usize>
+    ) {
+        self.0 = downsample_points(&self.points(), downsample_factor, min);
+    }
+
     #[cfg(feature = "gpx")]
     /// Simple export to GPX 1.1.
     pub fn to_gpx(&self) -> gpx::Gpx {
@@ -236,8 +269,55 @@ impl Gps {
     }
 }
 
+/// Downsample points.
+/// Clusters points in sizes equal to `sample_factor`,
+/// then downsamples each sub-cluster to a single point.
+/// Optionally set a minimum number of points to return via `min`.
+/// If `sample_factor` results in fewer points than `min`,
+/// `min` will be used in its place.
+pub fn downsample_points(
+    points: &[GoProPoint],
+    mut sample_factor: usize,
+    min: Option<usize>,
+) -> Vec<GoProPoint> {
+    // points may be empty due to being filtered out
+    // (satellite lock level too low, or DOP too high for GoPro)
+    if points.is_empty() {
+        return Vec::new();
+    }
+
+    match sample_factor {
+        // avoid division by 0
+        0 => {
+            warn!("Sample factor cannot be 0. Skipping downsample.");
+            return points.to_vec()
+        },
+        1 => return points.to_vec(),
+        // ensure downsampling will at lest yield a single point
+        f if f > points.len() => sample_factor = points.len(),
+        _ => (),
+    }
+
+    // Int division for checking if downsample factor
+    // causes fewer than optionally set min number of points
+    if let Some(m) = min {
+        if (points.len() / sample_factor) < m {
+            // div_ceil will be in upcoming rust version:
+            // https://github.com/rust-lang/rfcs/issues/2844
+            // sample_factor = points.len().div_ceil(m);
+            // sample_factor = (points.len() as f64 / m as f64).ceil() as usize // should this be .floor()?
+            // 220914 changed to .floor()
+            sample_factor = (points.len() as f64 / m as f64).floor() as usize // .floor() IS UNTESTED
+        }
+    }
+
+    points.chunks(sample_factor)
+        .filter_map(|c| average_points(c))
+        .collect::<Vec<_>>()
+}
+
 /// Returns a latitude dependent average coordinate for specified points.
-pub(crate) fn points_average(points: &[GoProPoint]) -> Option<GoProPoint> {
+pub(crate) fn average_points(points: &[GoProPoint]) -> Option<GoProPoint> {
     // see: https://carto.com/blog/center-of-points/ NO LONGER UP
     // atan2(y,x) where y = sum((sin(yi)+...+sin(yn))/n), x = sum((cos(xi)+...cos(xn))/n), y, i in radians
 
@@ -293,12 +373,9 @@ pub(crate) fn points_average(points: &[GoProPoint]) -> Option<GoProPoint> {
         point: point_xyzt,
         speed2d: sp2d_avg,
         speed3d: sp3d_avg,
-        // Use datetime for first point in cluster to represent the start
-        // of the timestamp for averaged points. (rather than average datetime)
-        // datetime: points.first().map(|p| p.datetime)?,
         // sum of all relative "video" timestamp durations
         // so that timestamp + duration = timespan within which all averaged points were logged
-        timestamp: dur_total, // TODO test! hero11 then virb (remove set_timedelta for virb)
+        timestamp: dur_total, // TODO test! hero11
         dop: dop_avg,
         fix: fix_avg as u32 // meaningless but eh...
     })

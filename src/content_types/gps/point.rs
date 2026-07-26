@@ -183,6 +183,19 @@ impl GoProPoint {
         self.point.timestamp()
     }
 
+    /// Returns the earliest datetime GoPro cameras log:
+    /// 2000-01-01 0:00 +0 hours.
+    pub fn datetime_default() -> OffsetDateTime {
+        datetime!(2000-01-01 0:00 +0)
+    }
+
+    /// Returns the earliest datetime as system time that
+    /// GoPro cameras log: 2000-01-01 0:00 +0 hours.
+    pub fn systemtime_default() -> SystemTime {
+        let dt_nanos_i128 = Self::datetime_default().unix_timestamp_nanos();
+        UNIX_EPOCH + Duration::nanoseconds_i128(dt_nanos_i128)
+    }
+
     pub fn datetime(&self) -> Result<OffsetDateTime, GpmfError>{
         let nanoseconds_u128 = self.point
             .timestamp()

@@ -1,3 +1,6 @@
+# v0.6.2
+- NEW: Added `Gps::downsample()` and `Gps::downsample_mut()` methods.
+
 # v0.6.1
 - NEW: Added GPX `From` implementation for `Gps` and `Gpmf`, and GPX `TryFrom` implementation for `GoProFile`, `GoProSession` and `GoProMultiSession`. If possible use the `Gps` implementation. This allows for pruning bad points before export (`Gps::prune()`), since GoPro cameras (at least tested models) usually log dummy points before a satellite lock has been acquired - sometimes a cached, last known location.
 

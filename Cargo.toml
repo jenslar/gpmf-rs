@@ -1,6 +1,6 @@
 [package]
 name = "gpmf-rs"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 description = "Extract, parse GoPro GPMF data from a GoPro MP4 file."
 repository = "https://github.com/jenslar/gpmf-rs"
