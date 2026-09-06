@@ -60,14 +60,12 @@ impl Stream {
     /// the drone itself.
     pub fn new<R: Read + BufRead + Seek>(
         reader: &mut R,
-        read_limit: usize,
+        read_limit: usize, // could seek to end + pos to determine? slow?
     ) -> Result<Vec<Self>, GpmfError> {
-
         // Type definitions (BaseType::TYPE) for BaseType::COMPLEX.
         // 'TYPE' must always precede 'COMPLEX' (the GPMF type `?`). E.g. TYPE = "cF" results in
         // BaseType::COMPLEX(Vec<BaseType::ASCII(_), BaseType::FOURCC(_)).
         let mut complex: Option<String> = None;
-
         let mut streams: Vec<Self> = Vec::new();
 
         // TODO check if read limit should substract header size above or below? works any way right now...
@@ -298,11 +296,8 @@ impl Stream {
     /// Find first stream with specified FourCC.
     /// Matches self and direct decendants.
     pub fn find(&self, fourcc: &FourCC) -> Option<&Self> {
-        // println!("Stream 4cc: {:?} (search for {fourcc:?})", self.fourcc());
         match self.has_fourcc(fourcc) {
-        // match self.fourcc() == fourcc {
             true => {
-                // println!("OK FOUND {fourcc:?}");
                 return Some(&self)
             },
             false => {

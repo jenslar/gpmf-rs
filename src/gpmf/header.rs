@@ -79,7 +79,9 @@ impl Header {
         // Set padding value for 32-bit alignment (0-3)
         let mut pad = 0;
         loop {
-            match (basesize * repeats + pad as u16) % 4 {
+            // raised casts from u16 to u32 since mission 1 logs large "GpDump"
+            // in first (always?) DEVC container
+            match (basesize as u32 * repeats as u32 + pad as u32) % 4 {
                 0 => break,
                 _ => pad += 1,
             }

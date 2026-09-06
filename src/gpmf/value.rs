@@ -3,7 +3,7 @@
 use std::{io::{BufRead, Read, Seek}, time::{SystemTime, UNIX_EPOCH}};
 
 use binrw::{BinRead, BinReaderExt, BinResult};
-use time::{Duration, PrimitiveDateTime, format_description};
+use time::{Duration, OffsetDateTime, PlainDateTime, PrimitiveDateTime, format_description};
 
 use super::Header;
 use crate::{DeviceId, FourCC, GpmfError};
@@ -285,8 +285,8 @@ impl Into<Option<DeviceId>> for &Value {
     }
 }
 
-impl Into<Option<PrimitiveDateTime>> for &Value {
-    fn into(self) -> Option<PrimitiveDateTime> {
+impl Into<Option<PlainDateTime>> for &Value {
+    fn into(self) -> Option<PlainDateTime> {
         match self {
             Value::Datetime(dt) => {
                 // 'time' crate does not parse two-digit years for ambiguity reasons.
@@ -294,7 +294,7 @@ impl Into<Option<PrimitiveDateTime>> for &Value {
                 // GPMF only covers years 2000+ so prefixing datetime string with "20"
                 // before parse should be ok.
                 // e.g. "181007105554.644" -> "20181007105554.644"
-                let format = format_description::parse(
+                let format = format_description::parse_borrowed::<3>(
                     "[year][month][day][hour][minute][second].[subsecond]",
                 )
                 .ok()?;
@@ -305,11 +305,59 @@ impl Into<Option<PrimitiveDateTime>> for &Value {
     }
 }
 
+impl Into<Option<OffsetDateTime>> for &Value {
+    /// Converts `Value` into UTC `OffsetDateTime`.
+    fn into(self) -> Option<OffsetDateTime> {
+        let t: Option<PlainDateTime> = self.into();
+        Some(t?.assume_utc())
+    }
+}
+
+impl TryInto<PlainDateTime> for &Value {
+    type Error = GpmfError;
+
+    fn try_into(self) -> Result<PlainDateTime, Self::Error> {
+        match self {
+            Value::Datetime(dt) => {
+                // 'time' crate does not parse two-digit years for ambiguity reasons.
+                // See: https://github.com/time-rs/time/discussions/459
+                // GPMF only covers years 2000+ so prefixing datetime string with "20"
+                // before parse should be ok.
+                // e.g. "181007105554.644" -> "20181007105554.644"
+                let format = format_description::parse_borrowed::<3>(
+                    "[year][month][day][hour][minute][second].[subsecond]",
+                )?;
+                Ok(PrimitiveDateTime::parse(&format!("20{dt}"), &format)?)
+            }
+            _ => Err(GpmfError::InvalidValueVariant),
+        }
+    }
+}
+
+impl TryInto<OffsetDateTime> for &Value {
+    type Error = GpmfError;
+
+    fn try_into(self) -> Result<OffsetDateTime, Self::Error> {
+        let t: PrimitiveDateTime = self.try_into()?;
+        Ok(t.assume_utc())
+    }
+}
+
 impl Into<Option<SystemTime>> for &Value {
     fn into(self) -> Option<SystemTime> {
         let pdt: Option<PrimitiveDateTime> = self.into();
         let utc_nanos = pdt?.as_utc().unix_timestamp_nanos();
         Some(UNIX_EPOCH + Duration::nanoseconds_i128( utc_nanos))
+    }
+}
+
+impl TryInto<SystemTime> for &Value {
+    type Error = GpmfError;
+
+    fn try_into(self) -> Result<SystemTime, Self::Error> {
+        let pdt: Result<PrimitiveDateTime, GpmfError> = self.try_into();
+        let utc_nanos = pdt?.as_utc().unix_timestamp_nanos();
+        Ok(UNIX_EPOCH + Duration::nanoseconds_i128( utc_nanos))
     }
 }
 

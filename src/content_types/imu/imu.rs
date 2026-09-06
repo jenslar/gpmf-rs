@@ -291,8 +291,6 @@ impl Imu {
     /// Returns all x, y, z values with a timestamp as vector of tuples `(x, y, z, T)`.
     pub fn xyz_t(&self) -> Result<Vec<(f64, f64, f64, f64)>, GpmfError> {
         let timestamps = self.sample_offsets();
-        println!("T {}", timestamps.len());
-        println!("S {}", self.len());
         if timestamps.len() != self.len() {
             return Err(GpmfError::SamplesTimestampSizeMismatch)
         }

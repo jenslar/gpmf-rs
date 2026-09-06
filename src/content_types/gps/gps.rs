@@ -2,7 +2,6 @@ use core::f64;
 use std::u32;
 
 use log::warn;
-use spatio_types::point::TemporalPoint3D;
 use time::{Duration, OffsetDateTime};
 use crate::content_types::{
     offsetdatetime_to_string,
@@ -83,7 +82,7 @@ impl Gps {
 
         Some(
             // subtract timestamp relative to video timeline from datetime
-            first_point.datetime().ok()? - first_point.timestamp,
+            first_point.datetime() - first_point.timestamp,
         )
     }
 
@@ -97,7 +96,7 @@ impl Gps {
 
     pub fn t_last_as_string(&self) -> Option<String> {
         self.last()
-            .and_then(|p| offsetdatetime_to_string(&p.datetime().ok()?).ok())
+            .and_then(|p| offsetdatetime_to_string(&p.datetime()).ok())
     }
 
     /// Prune points if `min_satellite_lock` is below specified value,
@@ -365,14 +364,17 @@ pub(crate) fn average_points(points: &[GoProPoint]) -> Option<GoProPoint> {
     let dop_avg = average(&dop);
     let fix_avg = average(&fix);
 
-    let point2d = spatio_types::geo::Point::new(lon_avg_deg, lat_avg_deg);
-    let systemtime = points.first()?.systemtime();
-    let point_xyzt = TemporalPoint3D::new(point2d, alt_avg, systemtime.to_owned());
+    let point2d = geo_types::Point::new(lon_avg_deg, lat_avg_deg);
+    // let point2d = spatio_types::geo::Point::new(lon_avg_deg, lat_avg_deg);
+    // let systemtime = points.first()?.systemtime();
+    // let point_xyzt = TemporalPoint3D::new(point2d, alt_avg, systemtime.to_owned());
 
     Some(GoProPoint {
-        point: point_xyzt,
+        point: point2d,
+        altitude: alt_avg,
         speed2d: sp2d_avg,
         speed3d: sp3d_avg,
+        datetime: points.first()?.datetime(),
         // sum of all relative "video" timestamp durations
         // so that timestamp + duration = timespan within which all averaged points were logged
         timestamp: dur_total, // TODO test! hero11

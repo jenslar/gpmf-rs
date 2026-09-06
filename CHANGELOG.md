@@ -1,3 +1,6 @@
+# v0.6.3
+- FIX: GoPro Mission 1 series support.
+
 # v0.6.2
 - NEW: Added `Gps::downsample()` and `Gps::downsample_mut()` methods.
 

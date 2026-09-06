@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 
 use jpegiter::{Jpeg, JpegTag};
 use mp4iter::{Mp4, Mp4Error, Sample};
-use rayon::iter::IntoParallelRefMutIterator;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator};
 use rayon::prelude::{
     IntoParallelRefIterator,
     ParallelIterator,
@@ -152,8 +152,10 @@ impl Gpmf {
             .samples()
             .collect::<Result<Vec<Sample>, Mp4Error>>()?;
         let streams = samples
-            .par_iter_mut() // does this help at all when io is the bottleneck, esp on spinning disks?
-            .map(|sample| {
+            // .par_iter_mut() // does this help at all when io is the bottleneck, esp on spinning disks?
+            .iter_mut()
+            .enumerate()
+            .map(|(i, sample)| {
                 let len = sample.len();
                 let ts = Timestamp::from(sample.deref());
                 let stream = Stream::new(sample, len)?
@@ -194,7 +196,6 @@ impl Gpmf {
     pub fn has_gps(&self) -> bool {
         self.filter_iter(DataType::Gps5).next().is_some()
         || self.filter_iter(DataType::Gps9).next().is_some()
-
     }
 
     pub fn export_raw(path: &Path) -> Result<Vec<u8>, GpmfError> {
@@ -467,7 +468,7 @@ impl Gpmf {
 
     /// Returns GPS log. Extracts data from either `GPS5`
     /// or `GPS9`, depending on device.
-    ///
+    ///geoela
     /// Hero11 logs both `GPS5` and `GPS9`, but deprecates `GPS5`.
     /// Hero 13 and on only logs `GPS9` (Hero 12 does not have a GPS module).
     ///
@@ -482,6 +483,8 @@ impl Gpmf {
         match device {
             Some(DeviceName::Hero11Black)
             | Some(DeviceName::Hero13Black) => self.gps9(),
+            | Some(DeviceName::Mission1) => self.gps9(),
+            | Some(DeviceName::Mission1Pro) => self.gps9(),
             _ => self.gps5()
         }
     }

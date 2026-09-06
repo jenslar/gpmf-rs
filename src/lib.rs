@@ -43,8 +43,6 @@ mod errors;
 pub(crate) mod files;
 mod gopro;
 pub mod gpmf;
-#[cfg(test)]
-mod tests;
 mod types;
 
 pub use constants::*;

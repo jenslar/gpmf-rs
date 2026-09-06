@@ -24,6 +24,8 @@ pub enum GpmfError {
     Utf8Error(std::string::FromUtf8Error),
     /// Parse integer from string error.
     ParseIntError(std::num::ParseIntError),
+    /// Parse string into datetime error.
+    ParseDateTimeError(time::error::Parse),
     /// Generic GPMF parse error
     ParseError,
     /// Int cast error
@@ -48,6 +50,8 @@ pub enum GpmfError {
     UnknownBaseType(u8),
     /// Missing type definition for Complex type (`63`/`?`)
     MissingComplexType,
+    /// `Value` is incompatible with action.
+    InvalidValueVariant,
     /// Exceeded recurse depth when parsing GPMF into `Stream`s
     RecurseDepthExceeded((usize, usize)),
     /// Invalid FourCC. For detecting `&[0, 0, 0, 0]`.
@@ -107,7 +111,8 @@ impl fmt::Display for GpmfError {
             GpmfError::BinReadError(err) => write!(f, "{err}"),
             GpmfError::TimeError(err) => write!(f, "{err}"),
             GpmfError::Utf8Error(err) => write!(f, "{err}"),
-            GpmfError::ParseIntError(err) => write!(f, "Unable to parse string into integer: {}", err),
+            GpmfError::ParseIntError(err) => write!(f, "Unable to parse string into integer: {err}"),
+            GpmfError::ParseDateTimeError(err) => write!(f, "Unable to parse string into datetime: {err}"),
             GpmfError::ParseError => write!(f, "Failed to parse GPMF data."),
             GpmfError::TryFromIntError(err) => write!(f, "Failed to downcast integer: {err}"),
             GpmfError::IOError(err) => write!(f, "IO error: {}", err),
@@ -120,6 +125,7 @@ impl fmt::Display for GpmfError {
             GpmfError::MaxFileSizeExceeded {max, got, path} => write!(f, "{} ({got} bytes) exceeds maximum file size of {max}.", path.display()),
             GpmfError::UnknownBaseType(bt) => write!(f, "Unknown base type {}/'{}'", bt, *bt as char),
             GpmfError::MissingComplexType => write!(f, "Missing type definitions for complex type '?'"),
+            GpmfError::InvalidValueVariant => write!(f, "Valid variant is incompatible with action"),
             GpmfError::RecurseDepthExceeded((depth, max)) => write!(f, "Recurse depth {depth} exceeds max recurse depth {max}"),
             GpmfError::InvalidFourCC => write!(f, "Invalid FourCC"),
             GpmfError::NoMuid => write!(f, "No MUID found"),
@@ -203,6 +209,20 @@ impl From<time::Error> for GpmfError {
 impl From<time::error::ComponentRange> for GpmfError {
     fn from(err: time::error::ComponentRange) -> GpmfError {
         GpmfError::TimeError(time::Error::ComponentRange(err))
+    }
+}
+
+/// Converts time::error::InvalidVariant to GpmfError
+impl From<time::error::InvalidFormatDescription> for GpmfError {
+    fn from(err: time::error::InvalidFormatDescription) -> GpmfError {
+        GpmfError::TimeError(time::Error::InvalidFormatDescription(err))
+    }
+}
+
+/// Converts time::error::Parse to GpmfError
+impl From<time::error::Parse> for GpmfError {
+    fn from(err: time::error::Parse) -> GpmfError {
+        GpmfError::ParseDateTimeError(err)
     }
 }
 
